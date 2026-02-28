@@ -65,6 +65,12 @@ var (
 			Foreground(lipgloss.Color("#1a1b26")).
 			Background(colorCyan).
 			Padding(0, 1)
+
+	previewBadgeStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("#1a1b26")).
+				Background(colorCyan).
+				Padding(0, 1)
 )
 
 // ── Command bar ─────────────────────────────────────────────
@@ -166,10 +172,6 @@ var (
 	recentMarkerStyle = lipgloss.NewStyle().
 				Foreground(colorCyan).
 				Bold(true)
-
-	pausedStyle = lipgloss.NewStyle().
-			Foreground(colorOrange).
-			Bold(true)
 
 	headerDimStyle = lipgloss.NewStyle().
 			Foreground(colorFgDim)

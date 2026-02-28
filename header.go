@@ -16,14 +16,7 @@ func (m model) renderHeader() string {
 	logo := logoBadge.Render("Git Owl")
 
 	// Spinner
-	var spin string
-	if m.paused {
-		spin = pausedStyle.Render("⏸")
-	} else if !m.animating {
-		spin = spinnerStyle.Render("●")
-	} else {
-		spin = spinnerStyle.Render(m.spinner.view())
-	}
+	spin := spinnerStyle.Render(m.spinner.view())
 
 	branch := branchStyle.Render("⏵ " + m.branch)
 
@@ -48,9 +41,7 @@ func (m model) renderHeader() string {
 	if m.allFiles {
 		line1RightParts = append(line1RightParts, allBadgeStyle.Render("ALL"))
 	}
-	if !m.minimal {
-		line1RightParts = append(line1RightParts, owlStyle.Render(owlTop()))
-	}
+	line1RightParts = append(line1RightParts, owlStyle.Render(owlTop()))
 	line1Right := strings.Join(line1RightParts, " ")
 	if line1Right != "" {
 		line1Right += rightPad
@@ -65,10 +56,7 @@ func (m model) renderHeader() string {
 	// ── Line 2: spinner + branch + files ... owl bottom ──
 	line2Left := indent + spin + "  " + branch + "  " + dirty + " " + count
 
-	var line2Right string
-	if !m.minimal {
-		line2Right = owlStyle.Render(m.owl.owlBottom()) + rightPad
-	}
+	line2Right := owlStyle.Render(m.owl.owlBottom()) + rightPad
 
 	gap2 := m.width - lipgloss.Width(line2Left) - lipgloss.Width(line2Right)
 	if gap2 < 1 {
@@ -107,15 +95,14 @@ func (m model) renderHelpContent() string {
 		{"enter", "Open file viewer"},
 		{"esc", "Back to file list"},
 		{"d", "Toggle diff mode"},
+		{"p", "Preview markdown"},
 		{"t", "Toggle all files"},
 		{"r", "Refresh file list"},
 		{"/", "Filter files"},
-		{"space", "Pause/resume refresh"},
-		{"a", "Toggle animations"},
-		{"m", "Toggle minimal mode"},
 		{"?", "Toggle this help"},
 		{"g/G", "Go to top/bottom"},
 		{"j/k", "Scroll up/down"},
+		{"h/l", "Scroll left/right"},
 		{"q", "Quit"},
 	}
 

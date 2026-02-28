@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 type view int
@@ -143,6 +144,7 @@ type model struct {
 	width       int
 	height      int
 	diffMode    bool
+	mdPreview   bool
 	allFiles    bool
 	currentFile string
 	branch      string
@@ -151,17 +153,18 @@ type model struct {
 	ready       bool
 
 	// Animation
-	spinner   spinnerState
-	owl       owlState
-	animating bool // true by default; 'a' toggles
-	paused    bool // 'space' toggles; stops refresh + freezes animations
-	minimal   bool // 'm' toggles; hides owl + events
-	showHelp  bool // '?' toggles
+	spinner  spinnerState
+	owl      owlState
+	showHelp bool // '?' toggles
 
 	// Snapshot diffing & events
 	prevSnapshot snapshot
 	events       eventsRing
 	recentFiles  map[string]bool // paths with recent changes (for row ✦ markers)
+
+	// Horizontal scroll
+	hScroll    int    // current horizontal offset in visible columns
+	rawContent string // unshifted file content for re-applying offset
 
 	// Header pulse
 	headerPulse int // frames remaining (decremented by animTick)
@@ -187,7 +190,6 @@ func initialModel() model {
 		currentView: fileListView,
 		list:        l,
 		branch:      "?",
-		animating:   true,
 		owl:         newOwlState(),
 		events:      newEventsRing(5),
 		recentFiles: map[string]bool{},
@@ -214,7 +216,7 @@ func loadFiles(all bool) tea.Cmd {
 	}
 }
 
-func loadFileContent(filename string, diffMode bool, status string, seq int) tea.Cmd {
+func loadFileContent(filename string, diffMode, mdPreview bool, status string, seq int) tea.Cmd {
 	return func() tea.Msg {
 		if diffMode && status != "??" {
 			diff, err := getDiff(filename)
@@ -245,6 +247,11 @@ func loadFileContent(filename string, diffMode bool, status string, seq int) tea
 			return fileContentMsg{content: "(binary file)", filename: filename, seq: seq}
 		}
 
+		if mdPreview && strings.HasSuffix(strings.ToLower(filename), ".md") {
+			rendered := renderMarkdown(content, 80)
+			return fileContentMsg{content: rendered, filename: filename, seq: seq}
+		}
+
 		highlighted := highlightContent(content, filename)
 		return fileContentMsg{content: highlighted, filename: filename, seq: seq}
 	}
@@ -266,14 +273,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case animTickMsg:
 		cmd := animTickCmd() // always reschedule
-		if m.animating && !m.paused {
-			m.spinner.tick()
-			m.owl.tick()
-			if m.headerPulse > 0 {
-				m.headerPulse--
-			}
-			m.recentFiles = m.events.recentPaths(2 * time.Second)
+		m.spinner.tick()
+		m.owl.tick()
+		if m.headerPulse > 0 {
+			m.headerPulse--
 		}
+		m.recentFiles = m.events.recentPaths(2 * time.Second)
 		return m, cmd
 
 	case filesLoadedMsg:
@@ -294,11 +299,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.prevSnapshot = newSnapshot(msg.files)
 
-		items := make([]list.Item, len(msg.files))
-		for i, f := range msg.files {
-			items[i] = f
+		// Don't update items while user is actively filtering — it resets the filter
+		if m.list.FilterState() != list.Filtering {
+			items := make([]list.Item, len(msg.files))
+			for i, f := range msg.files {
+				items[i] = f
+			}
+			m.list.SetItems(items)
 		}
-		m.list.SetItems(items)
 		return m, nil
 
 	case fileContentMsg:
@@ -308,10 +316,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		wasAutoRefresh := m.autoRefresh
 		m.autoRefresh = false
 		if msg.err != nil {
-			m.viewport.SetContent(fmt.Sprintf("Error: %v", msg.err))
+			m.rawContent = fmt.Sprintf("Error: %v", msg.err)
 		} else {
-			m.viewport.SetContent(msg.content)
+			m.rawContent = msg.content
 		}
+		innerW, _ := m.innerSize()
+		m.viewport.SetContent(applyHScroll(m.rawContent, m.hScroll, innerW))
 		if !wasAutoRefresh {
 			m.viewport.GotoTop()
 		}
@@ -320,18 +330,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tickMsg:
 		cmds := []tea.Cmd{tickCmd()}
-		if !m.paused {
-			cmds = append(cmds, loadFiles(m.allFiles))
-			if m.currentView == fileViewerView && m.currentFile != "" {
-				m.loadSeq++
-				m.autoRefresh = true
-				item, ok := m.list.SelectedItem().(fileEntry)
-				status := ""
-				if ok {
-					status = item.status
-				}
-				cmds = append(cmds, loadFileContent(m.currentFile, m.diffMode, status, m.loadSeq))
+		cmds = append(cmds, loadFiles(m.allFiles))
+		if m.currentView == fileViewerView && m.currentFile != "" {
+			m.loadSeq++
+			m.autoRefresh = true
+			item, ok := m.list.SelectedItem().(fileEntry)
+			status := ""
+			if ok {
+				status = item.status
 			}
+			cmds = append(cmds, loadFileContent(m.currentFile, m.diffMode, m.mdPreview, status, m.loadSeq))
 		}
 		return m, tea.Batch(cmds...)
 
@@ -365,15 +373,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m model) handleGlobalKey(key string) (model, tea.Cmd, bool) {
 	switch key {
-	case " ":
-		m.paused = !m.paused
-		return m, nil, true
-	case "a":
-		m.animating = !m.animating
-		return m, nil, true
-	case "m":
-		m.minimal = !m.minimal
-		return m, nil, true
 	case "?":
 		m.showHelp = !m.showHelp
 		return m, nil, true
@@ -386,17 +385,25 @@ func (m model) updateFileList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "q", "ctrl+c":
 		return m, tea.Quit
 
+	case "esc":
+		if m.showHelp {
+			m.showHelp = false
+		}
+		return m, nil
+
 	case "enter":
 		item, ok := m.list.SelectedItem().(fileEntry)
 		if !ok {
 			return m, nil
 		}
 		m.currentFile = item.path
+		m.hScroll = 0
+		m.mdPreview = strings.HasSuffix(strings.ToLower(item.path), ".md")
 		m.loadSeq++
 		innerW, innerH := m.innerSize()
 		m.viewport = viewport.New(innerW, innerH-2)
 		m.viewport.SetContent("Loading...")
-		return m, loadFileContent(item.path, m.diffMode, item.status, m.loadSeq)
+		return m, loadFileContent(item.path, m.diffMode, m.mdPreview, item.status, m.loadSeq)
 
 	case "t":
 		m.allFiles = !m.allFiles
@@ -430,13 +437,28 @@ func (m model) updateFileViewer(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "d":
 		m.diffMode = !m.diffMode
+		m.hScroll = 0
 		m.loadSeq++
 		item, ok := m.list.SelectedItem().(fileEntry)
 		status := ""
 		if ok {
 			status = item.status
 		}
-		return m, loadFileContent(m.currentFile, m.diffMode, status, m.loadSeq)
+		return m, loadFileContent(m.currentFile, m.diffMode, m.mdPreview, status, m.loadSeq)
+
+	case "p":
+		if strings.HasSuffix(strings.ToLower(m.currentFile), ".md") {
+			m.mdPreview = !m.mdPreview
+			m.hScroll = 0
+			m.loadSeq++
+			item, ok := m.list.SelectedItem().(fileEntry)
+			status := ""
+			if ok {
+				status = item.status
+			}
+			return m, loadFileContent(m.currentFile, m.diffMode, m.mdPreview, status, m.loadSeq)
+		}
+		return m, nil
 
 	case "g":
 		m.viewport.GotoTop()
@@ -445,11 +467,48 @@ func (m model) updateFileViewer(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "G":
 		m.viewport.GotoBottom()
 		return m, nil
+
+	case "h", "left":
+		m.hScroll -= 4
+		if m.hScroll < 0 {
+			m.hScroll = 0
+		}
+		innerW, _ := m.innerSize()
+		yoff := m.viewport.YOffset
+		m.viewport.SetContent(applyHScroll(m.rawContent, m.hScroll, innerW))
+		m.viewport.SetYOffset(yoff)
+		return m, nil
+
+	case "l", "right":
+		m.hScroll += 4
+		innerW, _ := m.innerSize()
+		yoff := m.viewport.YOffset
+		m.viewport.SetContent(applyHScroll(m.rawContent, m.hScroll, innerW))
+		m.viewport.SetYOffset(yoff)
+		return m, nil
 	}
 
 	var cmd tea.Cmd
 	m.viewport, cmd = m.viewport.Update(msg)
 	return m, cmd
+}
+
+// applyHScroll shifts each line of content horizontally using ANSI-aware truncation.
+func applyHScroll(content string, offset, width int) string {
+	if offset == 0 && width == 0 {
+		return content
+	}
+	lines := strings.Split(content, "\n")
+	for i, line := range lines {
+		if offset > 0 {
+			line = ansi.TruncateLeft(line, offset, "")
+		}
+		if width > 0 {
+			line = ansi.Truncate(line, width, "")
+		}
+		lines[i] = line
+	}
+	return strings.Join(lines, "\n")
 }
 
 // innerSize returns the content width and height inside the bordered panel.
@@ -504,14 +563,15 @@ func (m model) renderCmdBar() string {
 		hints = []hint{
 			{"esc", "back"},
 			{"d", "iff"},
+			{"p", "review"},
 			{"g/G", "top/btm"},
 			{"j/k", "scroll"},
+			{"h/l", "pan"},
 		}
 	}
 
 	// Global hints
 	hints = append(hints,
-		hint{"space", "pause"},
 		hint{"?", "help"},
 		hint{"q", "uit"},
 	)
@@ -522,22 +582,7 @@ func (m model) renderCmdBar() string {
 			cmdKeyStyle.Render("<"+h.key+">")+cmdDescStyle.Render(h.desc))
 	}
 
-	// State indicators
-	var indicators []string
-	if m.paused {
-		indicators = append(indicators, pausedStyle.Render("PAUSED"))
-	}
-	if !m.animating {
-		indicators = append(indicators, headerDimStyle.Render("ANIM:OFF"))
-	}
-	if m.minimal {
-		indicators = append(indicators, headerDimStyle.Render("MIN"))
-	}
-
 	bar := strings.Join(parts, cmdSepStyle.Render("  "))
-	if len(indicators) > 0 {
-		bar += "  " + strings.Join(indicators, " ")
-	}
 	// Align with panel content: 1 char centering margin + 1 char border = 2
 	return cmdBarStyle.Width(m.width).Render("  " + bar)
 }
@@ -586,6 +631,9 @@ func (m model) renderFileViewer(width int) string {
 
 	if m.diffMode {
 		breadcrumb += " " + diffBadgeStyle.Render("DIFF")
+	}
+	if m.mdPreview {
+		breadcrumb += " " + previewBadgeStyle.Render("PREVIEW")
 	}
 
 	// Scroll percentage right-aligned

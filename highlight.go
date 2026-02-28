@@ -9,6 +9,7 @@ import (
 	"github.com/alecthomas/chroma/v2/formatters"
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/alecthomas/chroma/v2/styles"
+	"github.com/charmbracelet/glamour"
 )
 
 var (
@@ -55,6 +56,21 @@ func highlightDiff(diff string) string {
 		return diff
 	}
 	return buf.String()
+}
+
+func renderMarkdown(content string, width int) string {
+	r, err := glamour.NewTermRenderer(
+		glamour.WithStandardStyle("dark"),
+		glamour.WithWordWrap(width),
+	)
+	if err != nil {
+		return content
+	}
+	out, err := r.Render(content)
+	if err != nil {
+		return content
+	}
+	return strings.TrimRight(out, "\n")
 }
 
 func highlightContent(content, filename string) string {
