@@ -51,6 +51,7 @@ BREAKING CHANGE: removed --compact flag
 4. Use the body to explain **why**, not what
 5. Only use `feat` or `fix` when a release should be triggered — use `chore`, `docs`, `refactor`, etc. for non-release changes
 6. Always run `go build ./...` and `go test ./...` before committing
+7. Do not add a `Co-Authored-By` trailer to commit messages
 
 ## Steps
 
