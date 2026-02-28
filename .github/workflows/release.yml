@@ -1,0 +1,69 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run tests
+        run: go test ./...
+
+      - name: Build binaries
+        run: |
+          mkdir -p dist
+          CGO_ENABLED=0 GOOS=darwin  GOARCH=arm64 go build -o dist/git-owl-darwin-arm64
+          CGO_ENABLED=0 GOOS=darwin  GOARCH=amd64 go build -o dist/git-owl-darwin-amd64
+          CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build -o dist/git-owl-linux-amd64
+          CGO_ENABLED=0 GOOS=linux   GOARCH=arm64 go build -o dist/git-owl-linux-arm64
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o dist/git-owl-windows-amd64.exe
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          append_body: true
+          body: |
+            ## Install
+
+            **macOS (Apple Silicon)**
+            ```bash
+            curl -Lo git-owl https://github.com/AdrianClyde/git-owl/releases/download/${{ github.ref_name }}/git-owl-darwin-arm64
+            chmod +x git-owl && sudo mv git-owl /usr/local/bin/
+            ```
+
+            **macOS (Intel)**
+            ```bash
+            curl -Lo git-owl https://github.com/AdrianClyde/git-owl/releases/download/${{ github.ref_name }}/git-owl-darwin-amd64
+            chmod +x git-owl && sudo mv git-owl /usr/local/bin/
+            ```
+
+            **Linux (x86_64)**
+            ```bash
+            curl -Lo git-owl https://github.com/AdrianClyde/git-owl/releases/download/${{ github.ref_name }}/git-owl-linux-amd64
+            chmod +x git-owl && sudo mv git-owl /usr/local/bin/
+            ```
+
+            **Linux (ARM64)**
+            ```bash
+            curl -Lo git-owl https://github.com/AdrianClyde/git-owl/releases/download/${{ github.ref_name }}/git-owl-linux-arm64
+            chmod +x git-owl && sudo mv git-owl /usr/local/bin/
+            ```
+
+            **Windows (x86_64)**
+            ```powershell
+            Invoke-WebRequest -Uri https://github.com/AdrianClyde/git-owl/releases/download/${{ github.ref_name }}/git-owl-windows-amd64.exe -OutFile git-owl.exe
+            ```
+          files: dist/*

@@ -1,4 +1,4 @@
-# git-owl 🦉
+# Git Owl 🦉
 
 A pretty terminal git diff viewer with an animated owl that judges your code.
 
@@ -23,11 +23,9 @@ This is that viewer.
 
 ## Install
 
-```bash
-go install github.com/AdrianClyde/git-owl@latest
-```
+Grab the latest binary from [Releases](https://github.com/AdrianClyde/git-owl/releases).
 
-Or build it yourself like a grown-up:
+Or build from source:
 
 ```bash
 go build -o git-owl
