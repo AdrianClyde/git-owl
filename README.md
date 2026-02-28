@@ -28,8 +28,11 @@ Grab the latest binary from [Releases](https://github.com/AdrianClyde/git-owl/re
 Or build from source:
 
 ```bash
+flox activate
 go build -o git-owl
 ```
+
+> This project uses [Flox](https://flox.dev) to manage dependencies. `flox activate` drops you into a shell with Go, Git, and everything else you need.
 
 ## Usage
 

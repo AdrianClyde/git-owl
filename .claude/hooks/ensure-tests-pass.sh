@@ -2,6 +2,11 @@
 set -e
 
 HOOK_INPUT=$(cat)
+
+# Activate the flox environment for access to go, jq, etc.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+eval "$(flox activate -d "$SCRIPT_DIR")"
+
 CWD=$(echo "$HOOK_INPUT" | jq -r '.cwd')
 STOP_HOOK_ACTIVE=$(echo "$HOOK_INPUT" | jq -r '.stop_hook_active')
 
