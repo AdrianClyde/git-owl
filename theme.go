@@ -51,6 +51,9 @@ var (
 			Background(colorSurface).
 			Foreground(colorFg)
 
+	headerLine2Style = lipgloss.NewStyle().
+				Foreground(colorFg)
+
 	diffBadgeStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("#1a1b26")).
@@ -68,7 +71,6 @@ var (
 
 var (
 	cmdBarStyle = lipgloss.NewStyle().
-			Background(colorSurface).
 			Foreground(colorFg)
 
 	cmdKeyStyle = lipgloss.NewStyle().
@@ -150,6 +152,47 @@ var (
 
 	lineBarStyle = lipgloss.NewStyle().
 			Foreground(colorBorderDim)
+)
+
+// ── Animation & header ──────────────────────────────────────
+
+var (
+	spinnerStyle = lipgloss.NewStyle().
+			Foreground(colorCyan)
+
+	owlStyle = lipgloss.NewStyle().
+			Foreground(colorCyan)
+
+	recentMarkerStyle = lipgloss.NewStyle().
+				Foreground(colorCyan).
+				Bold(true)
+
+	pausedStyle = lipgloss.NewStyle().
+			Foreground(colorOrange).
+			Bold(true)
+
+	headerDimStyle = lipgloss.NewStyle().
+			Foreground(colorFgDim)
+
+	headerAccentStyle = lipgloss.NewStyle().
+				Foreground(colorCyan)
+
+	headerPulseLineStyle = lipgloss.NewStyle().
+				Foreground(colorCyan)
+
+	helpOverlayStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(colorBlue).
+				Background(colorSurfaceDim).
+				Padding(1, 2)
+
+	dirtyIndicatorStyle = lipgloss.NewStyle().
+				Foreground(colorOrange).
+				Bold(true)
+
+	cleanIndicatorStyle = lipgloss.NewStyle().
+				Foreground(colorAdded).
+				Bold(true)
 )
 
 // ── Filter prompt ───────────────────────────────────────────

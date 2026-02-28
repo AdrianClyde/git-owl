@@ -21,9 +21,10 @@ const (
 
 // Messages
 type filesLoadedMsg struct {
-	files  []fileEntry
-	branch string
-	err    error
+	files    []fileEntry
+	branch   string
+	err      error
+	scanTime time.Duration
 }
 
 type fileContentMsg struct {
@@ -42,7 +43,9 @@ func tickCmd() tea.Cmd {
 }
 
 // Custom list delegate for colored badge rows
-type fileDelegate struct{}
+type fileDelegate struct {
+	recentFiles map[string]bool
+}
 
 func (d fileDelegate) Height() int                             { return 1 }
 func (d fileDelegate) Spacing() int                            { return 0 }
@@ -55,12 +58,17 @@ func (d fileDelegate) Render(w io.Writer, m list.Model, index int, item list.Ite
 	}
 
 	isSelected := index == m.Index()
+	isRecent := d.recentFiles[f.path]
 	maxWidth := m.Width()
 
-	// Prefix: cursor (2) + badge (3) + space (1) = 6 chars
-	prefix := "  "
-	if isSelected {
+	// Prefix: cursor/marker (2) + badge (3) + space (1) = 6 chars
+	var prefix string
+	if isRecent {
+		prefix = recentMarkerStyle.Render("✦ ")
+	} else if isSelected {
 		prefix = cursorStyle.Render("> ")
+	} else {
+		prefix = "  "
 	}
 	badge := statusBadgeStyle(f.status).Render(statusLabel(f.status))
 
@@ -82,14 +90,14 @@ func (d fileDelegate) Render(w io.Writer, m list.Model, index int, item list.Ite
 		// Re-split after truncation
 		d2, f2 := splitPath(fullPath)
 		if d2 != "" {
-			if isSelected {
+			if isSelected || isRecent {
 				pathStr = pathDirStyle.Background(colorHighlight).Render(d2+"/") +
 					pathFileStyle.Background(colorHighlight).Render(f2)
 			} else {
 				pathStr = pathDirStyle.Render(d2+"/") + pathFileStyle.Render(f2)
 			}
 		} else {
-			if isSelected {
+			if isSelected || isRecent {
 				pathStr = pathFileStyle.Background(colorHighlight).Render(f2)
 			} else {
 				pathStr = pathFileStyle.Render(f2)
@@ -100,7 +108,7 @@ func (d fileDelegate) Render(w io.Writer, m list.Model, index int, item list.Ite
 		if len(name) > pathBudget {
 			name = name[:pathBudget-1] + "…"
 		}
-		if isSelected {
+		if isSelected || isRecent {
 			pathStr = pathFileStyle.Background(colorHighlight).Render(name)
 		} else {
 			pathStr = pathFileStyle.Render(name)
@@ -109,7 +117,7 @@ func (d fileDelegate) Render(w io.Writer, m list.Model, index int, item list.Ite
 
 	row := prefix + badge + " " + pathStr
 
-	if isSelected {
+	if isSelected || isRecent {
 		rowLen := lipgloss.Width(row)
 		if rowLen < maxWidth {
 			pad := selectedRowStyle.Render(strings.Repeat(" ", maxWidth-rowLen))
@@ -141,6 +149,26 @@ type model struct {
 	loadSeq     int
 	autoRefresh bool
 	ready       bool
+
+	// Animation
+	spinner   spinnerState
+	owl       owlState
+	animating bool // true by default; 'a' toggles
+	paused    bool // 'space' toggles; stops refresh + freezes animations
+	minimal   bool // 'm' toggles; hides owl + events
+	showHelp  bool // '?' toggles
+
+	// Snapshot diffing & events
+	prevSnapshot snapshot
+	events       eventsRing
+	recentFiles  map[string]bool // paths with recent changes (for row ✦ markers)
+
+	// Header pulse
+	headerPulse int // frames remaining (decremented by animTick)
+
+	// Metrics
+	lastScanTime time.Duration // how long the last git status call took
+	lastScanAt   time.Time     // when last scan completed
 }
 
 func initialModel() model {
@@ -153,20 +181,26 @@ func initialModel() model {
 	l.FilterInput.PromptStyle = filterPromptStyle
 	l.FilterInput.Prompt = "/ "
 	l.Styles.NoItems = lipgloss.NewStyle().Foreground(colorFgDim).Padding(1, 2)
+	l.Styles.TitleBar = lipgloss.NewStyle() // remove default bottom padding
 
 	return model{
 		currentView: fileListView,
 		list:        l,
 		branch:      "?",
+		animating:   true,
+		owl:         newOwlState(),
+		events:      newEventsRing(5),
+		recentFiles: map[string]bool{},
 	}
 }
 
 func (m model) Init() tea.Cmd {
-	return tea.Batch(loadFiles(false), tickCmd())
+	return tea.Batch(loadFiles(false), tickCmd(), animTickCmd())
 }
 
 func loadFiles(all bool) tea.Cmd {
 	return func() tea.Msg {
+		start := time.Now()
 		var files []fileEntry
 		var err error
 		if all {
@@ -175,7 +209,8 @@ func loadFiles(all bool) tea.Cmd {
 			files, err = getChangedFiles()
 		}
 		branch := getCurrentBranch()
-		return filesLoadedMsg{files: files, branch: branch, err: err}
+		elapsed := time.Since(start)
+		return filesLoadedMsg{files: files, branch: branch, err: err, scanTime: elapsed}
 	}
 }
 
@@ -229,11 +264,36 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.ready = true
 		return m, nil
 
+	case animTickMsg:
+		cmd := animTickCmd() // always reschedule
+		if m.animating && !m.paused {
+			m.spinner.tick()
+			m.owl.tick()
+			if m.headerPulse > 0 {
+				m.headerPulse--
+			}
+			m.recentFiles = m.events.recentPaths(2 * time.Second)
+		}
+		return m, cmd
+
 	case filesLoadedMsg:
 		if msg.err != nil {
 			return m, nil
 		}
 		m.branch = msg.branch
+		m.lastScanAt = time.Now()
+		m.lastScanTime = msg.scanTime
+
+		// Snapshot diffing
+		if m.prevSnapshot.files != nil {
+			changes := m.prevSnapshot.diff(msg.files)
+			if len(changes) > 0 {
+				m.events.push(changes)
+				m.headerPulse = 6 // ~600ms at 100ms ticks
+			}
+		}
+		m.prevSnapshot = newSnapshot(msg.files)
+
 		items := make([]list.Item, len(msg.files))
 		for i, f := range msg.files {
 			items[i] = f
@@ -259,16 +319,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tickMsg:
-		cmds := []tea.Cmd{tickCmd(), loadFiles(m.allFiles)}
-		if m.currentView == fileViewerView && m.currentFile != "" {
-			m.loadSeq++
-			m.autoRefresh = true
-			item, ok := m.list.SelectedItem().(fileEntry)
-			status := ""
-			if ok {
-				status = item.status
+		cmds := []tea.Cmd{tickCmd()}
+		if !m.paused {
+			cmds = append(cmds, loadFiles(m.allFiles))
+			if m.currentView == fileViewerView && m.currentFile != "" {
+				m.loadSeq++
+				m.autoRefresh = true
+				item, ok := m.list.SelectedItem().(fileEntry)
+				status := ""
+				if ok {
+					status = item.status
+				}
+				cmds = append(cmds, loadFileContent(m.currentFile, m.diffMode, status, m.loadSeq))
 			}
-			cmds = append(cmds, loadFileContent(m.currentFile, m.diffMode, status, m.loadSeq))
 		}
 		return m, tea.Batch(cmds...)
 
@@ -277,6 +340,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var cmd tea.Cmd
 			m.list, cmd = m.list.Update(msg)
 			return m, cmd
+		}
+
+		// Global keybindings
+		if mdl, cmd, handled := m.handleGlobalKey(msg.String()); handled {
+			return mdl, cmd
 		}
 
 		switch m.currentView {
@@ -293,6 +361,24 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 	return m, nil
+}
+
+func (m model) handleGlobalKey(key string) (model, tea.Cmd, bool) {
+	switch key {
+	case " ":
+		m.paused = !m.paused
+		return m, nil, true
+	case "a":
+		m.animating = !m.animating
+		return m, nil, true
+	case "m":
+		m.minimal = !m.minimal
+		return m, nil, true
+	case "?":
+		m.showHelp = !m.showHelp
+		return m, nil, true
+	}
+	return m, nil, false
 }
 
 func (m model) updateFileList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -335,6 +421,10 @@ func (m model) updateFileViewer(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 
 	case "esc":
+		if m.showHelp {
+			m.showHelp = false
+			return m, nil
+		}
 		m.currentView = fileListView
 		return m, nil
 
@@ -363,10 +453,10 @@ func (m model) updateFileViewer(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // innerSize returns the content width and height inside the bordered panel.
-// Layout: status bar (1) + top border (1) + content + bottom border (1) + command bar (1) = 4 chrome lines
+// Layout: header (2) + top border (1) + content + bottom border (1) + command bar (1) = 5 chrome lines
 func (m model) innerSize() (int, int) {
-	w := m.width - 4  // border left (1) + padding (1) + border right (1) + padding (1)
-	h := m.height - 4 // status bar + border top + border bottom + cmd bar
+	w := m.width - 4 // border left (1) + padding (1) + border right (1) + padding (1)
+	h := m.height - 5 // header (2) + border top + border bottom + cmd bar
 	if w < 10 {
 		w = 10
 	}
@@ -383,39 +473,18 @@ func (m model) View() string {
 		return "Loading..."
 	}
 
-	status := m.renderStatusBar()
+	// Update delegate with recent files before rendering
+	m.list.SetDelegate(fileDelegate{recentFiles: m.recentFiles})
+
+	header := m.renderHeader()
 	cmdbar := m.renderCmdBar()
 	panel := m.renderPanel()
 
-	return status + "\n" + panel + "\n" + cmdbar
-}
-
-// renderStatusBar builds the full-width top bar.
-func (m model) renderStatusBar() string {
-	logo := logoBadge.Render("git-watch")
-	branch := " " + branchStyle.Render("\ue0a0 "+m.branch) // powerline branch icon
-	count := fileCountStyle.Render(fmt.Sprintf("  %d files", len(m.list.Items())))
-
-	left := logo + branch + count
-
-	var badges []string
-	if m.diffMode {
-		badges = append(badges, diffBadgeStyle.Render("DIFF"))
-	}
-	if m.allFiles {
-		badges = append(badges, allBadgeStyle.Render("ALL"))
-	}
-	right := strings.Join(badges, " ")
-
-	leftW := lipgloss.Width(left)
-	rightW := lipgloss.Width(right)
-	gap := m.width - leftW - rightW
-	if gap < 1 {
-		gap = 1
+	if m.showHelp {
+		return m.renderWithHelpOverlay(header, panel, cmdbar)
 	}
 
-	bar := left + strings.Repeat(" ", gap) + right
-	return statusBarStyle.Width(m.width).Render(bar)
+	return header + "\n" + panel + "\n" + cmdbar
 }
 
 // renderCmdBar builds the bottom command hint bar.
@@ -430,7 +499,6 @@ func (m model) renderCmdBar() string {
 			{"t", "oggle all"},
 			{"r", "efresh"},
 			{"/", "filter"},
-			{"q", "uit"},
 		}
 	} else {
 		hints = []hint{
@@ -438,17 +506,40 @@ func (m model) renderCmdBar() string {
 			{"d", "iff"},
 			{"g/G", "top/btm"},
 			{"j/k", "scroll"},
-			{"q", "uit"},
 		}
 	}
+
+	// Global hints
+	hints = append(hints,
+		hint{"space", "pause"},
+		hint{"?", "help"},
+		hint{"q", "uit"},
+	)
 
 	var parts []string
 	for _, h := range hints {
 		parts = append(parts,
 			cmdKeyStyle.Render("<"+h.key+">")+cmdDescStyle.Render(h.desc))
 	}
+
+	// State indicators
+	var indicators []string
+	if m.paused {
+		indicators = append(indicators, pausedStyle.Render("PAUSED"))
+	}
+	if !m.animating {
+		indicators = append(indicators, headerDimStyle.Render("ANIM:OFF"))
+	}
+	if m.minimal {
+		indicators = append(indicators, headerDimStyle.Render("MIN"))
+	}
+
 	bar := strings.Join(parts, cmdSepStyle.Render("  "))
-	return cmdBarStyle.Width(m.width).Render(" " + bar)
+	if len(indicators) > 0 {
+		bar += "  " + strings.Join(indicators, " ")
+	}
+	// Align with panel content: 1 char centering margin + 1 char border = 2
+	return cmdBarStyle.Width(m.width).Render("  " + bar)
 }
 
 // renderPanel wraps the main content in a rounded border.
@@ -465,6 +556,12 @@ func (m model) renderPanel() string {
 	}
 
 	border := panelBorder(focused, innerW, innerH)
+
+	// Pulse: change top border color when headerPulse > 0
+	if m.headerPulse > 0 {
+		border = border.BorderForeground(colorCyan)
+	}
+
 	return lipgloss.PlaceHorizontal(m.width, lipgloss.Center, border.Render(content))
 }
 
@@ -481,6 +578,11 @@ func (m model) renderFileViewer(width int) string {
 		}
 	}
 	breadcrumb := strings.Join(crumbs, breadcrumbSepStyle.Render(" / "))
+
+	// Status badge if available
+	if item, ok := m.list.SelectedItem().(fileEntry); ok {
+		breadcrumb += " " + statusBadgeStyle(item.status).Render(statusLabel(item.status))
+	}
 
 	if m.diffMode {
 		breadcrumb += " " + diffBadgeStyle.Render("DIFF")

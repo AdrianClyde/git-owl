@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/lipgloss"
@@ -345,4 +346,196 @@ func stripAnsi(s string) string {
 		buf.WriteByte(s[i])
 	}
 	return buf.String()
+}
+
+func TestSnapshotDiff(t *testing.T) {
+	old := []fileEntry{
+		{status: "M", path: "file1.go"},
+		{status: "A", path: "file2.go"},
+		{status: "D", path: "file3.go"},
+	}
+	snap := newSnapshot(old)
+
+	current := []fileEntry{
+		{status: "M", path: "file1.go"},  // unchanged
+		{status: "M", path: "file2.go"},  // status changed A→M
+		{status: "A", path: "file4.go"},  // new file
+		// file3.go removed
+	}
+
+	changes := snap.diff(current)
+
+	// Should detect: file2 changed, file4 added, file3 removed = 3 events
+	if len(changes) != 3 {
+		t.Fatalf("expected 3 changes, got %d", len(changes))
+	}
+
+	pathSet := make(map[string]bool)
+	for _, c := range changes {
+		pathSet[c.path] = true
+	}
+
+	if !pathSet["file2.go"] {
+		t.Error("missing change event for file2.go (status changed)")
+	}
+	if !pathSet["file4.go"] {
+		t.Error("missing change event for file4.go (added)")
+	}
+	if !pathSet["file3.go"] {
+		t.Error("missing change event for file3.go (removed)")
+	}
+}
+
+func TestSnapshotDiffNoChanges(t *testing.T) {
+	files := []fileEntry{
+		{status: "M", path: "file1.go"},
+		{status: "A", path: "file2.go"},
+	}
+	snap := newSnapshot(files)
+	changes := snap.diff(files)
+	if len(changes) != 0 {
+		t.Errorf("expected 0 changes for identical snapshots, got %d", len(changes))
+	}
+}
+
+func TestEventsRing(t *testing.T) {
+	ring := newEventsRing(3)
+
+	// Push 2 events
+	ring.push([]changeEvent{
+		{path: "a.go", status: "M", at: time.Now()},
+		{path: "b.go", status: "A", at: time.Now()},
+	})
+	if ring.count() != 2 {
+		t.Errorf("expected 2 events, got %d", ring.count())
+	}
+
+	// Push 3 more — should keep only last 3
+	ring.push([]changeEvent{
+		{path: "c.go", status: "M", at: time.Now()},
+		{path: "d.go", status: "M", at: time.Now()},
+		{path: "e.go", status: "M", at: time.Now()},
+	})
+	if ring.count() != 3 {
+		t.Errorf("expected 3 events (capacity), got %d", ring.count())
+	}
+
+	// Verify oldest events were dropped
+	paths := make(map[string]bool)
+	for _, e := range ring.items {
+		paths[e.path] = true
+	}
+	if paths["a.go"] || paths["b.go"] {
+		t.Error("old events should have been evicted")
+	}
+}
+
+func TestEventsRingRecentPaths(t *testing.T) {
+	ring := newEventsRing(5)
+
+	// Add an old event and a recent event
+	ring.push([]changeEvent{
+		{path: "old.go", status: "M", at: time.Now().Add(-5 * time.Second)},
+		{path: "new.go", status: "M", at: time.Now()},
+	})
+
+	recent := ring.recentPaths(2 * time.Second)
+	if recent["old.go"] {
+		t.Error("old.go should not be in recent paths")
+	}
+	if !recent["new.go"] {
+		t.Error("new.go should be in recent paths")
+	}
+}
+
+func TestOwlTick(t *testing.T) {
+	o := &owlState{
+		expr:     owlIdle,
+		blinkIn:  3, // will fire soon
+		wideIn:   1000,
+		glanceIn: 1000,
+	}
+
+	// Tick until blink fires
+	for i := 0; i < 3; i++ {
+		o.tick()
+	}
+	if o.expr != owlBlink {
+		t.Errorf("expected owlBlink after blinkIn fires, got %d", o.expr)
+	}
+
+	// TTL should be 1 or 2
+	if o.exprTTL < 1 || o.exprTTL > 2 {
+		t.Errorf("expected blink TTL 1-2, got %d", o.exprTTL)
+	}
+
+	// Tick until TTL expires — should return to idle
+	for o.exprTTL > 0 {
+		o.tick()
+	}
+	if o.expr != owlIdle {
+		t.Errorf("expected owlIdle after TTL expires, got %d", o.expr)
+	}
+
+	// Test wide expression fires
+	o2 := &owlState{
+		expr:     owlIdle,
+		blinkIn:  1000,
+		wideIn:   1,
+		glanceIn: 1000,
+	}
+	o2.tick()
+	if o2.expr != owlWide {
+		t.Errorf("expected owlWide when wideIn fires, got %d", o2.expr)
+	}
+
+	// Test glance expression fires (left or right)
+	o3 := &owlState{
+		expr:     owlIdle,
+		blinkIn:  1000,
+		wideIn:   1000,
+		glanceIn: 1,
+	}
+	o3.tick()
+	if o3.expr != owlRight && o3.expr != owlLeft {
+		t.Errorf("expected owlRight or owlLeft when glanceIn fires, got %d", o3.expr)
+	}
+}
+
+func TestOwlExpressions(t *testing.T) {
+	// Verify each expression string is exactly 7 chars
+	top := owlTop()
+	if len(top) != 7 {
+		t.Errorf("owlTop length = %d, want 7: %q", len(top), top)
+	}
+
+	expressions := []owlExpression{owlIdle, owlBlink, owlWide, owlRight, owlLeft}
+	for _, expr := range expressions {
+		o := &owlState{expr: expr}
+		bottom := o.owlBottom()
+		if len(bottom) != 7 {
+			t.Errorf("owlBottom(%d) length = %d, want 7: %q", expr, len(bottom), bottom)
+		}
+	}
+}
+
+func TestSpinnerTick(t *testing.T) {
+	s := &spinnerState{frame: 0}
+	s.tick()
+	if s.frame != 1 {
+		t.Errorf("expected frame 1, got %d", s.frame)
+	}
+
+	// Wrap around
+	s.frame = len(brailleFrames) - 1
+	s.tick()
+	if s.frame != 0 {
+		t.Errorf("expected frame to wrap to 0, got %d", s.frame)
+	}
+
+	// View returns a non-empty string
+	v := s.view()
+	if v == "" {
+		t.Error("spinner view should not be empty")
+	}
 }

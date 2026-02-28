@@ -1,4 +1,4 @@
-module git-watch
+module git-owl
 
 go 1.24.2
 

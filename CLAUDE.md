@@ -1,4 +1,4 @@
-# git-watch
+# git-owl
 
 ## Rules
 
