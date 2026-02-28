@@ -1,0 +1,410 @@
+{
+  "lockfile-version": 1,
+  "manifest": {
+    "version": 1,
+    "install": {
+      "git": {
+        "pkg-path": "git"
+      },
+      "go": {
+        "pkg-path": "go"
+      },
+      "jq": {
+        "pkg-path": "jq"
+      }
+    },
+    "hook": {},
+    "profile": {},
+    "options": {}
+  },
+  "packages": [
+    {
+      "attr_path": "git",
+      "broken": false,
+      "derivation": "/nix/store/knkyndi59nbvnn068s7d0jssljv662pc-git-2.53.0.drv",
+      "description": "Distributed version control system",
+      "install_id": "git",
+      "license": "GPL-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=2fc6539b481e1d2569f25f8799236694180c0993",
+      "name": "git-2.53.0",
+      "pname": "git",
+      "rev": "2fc6539b481e1d2569f25f8799236694180c0993",
+      "rev_count": 953160,
+      "rev_date": "2026-02-23T12:05:20Z",
+      "scrape_date": "2026-02-25T04:46:02.818347Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.53.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/lgbyzfz2j1j7g47331i5684765akl38m-git-2.53.0-doc",
+        "out": "/nix/store/rfbzyqcygzpyh5ncb79n07x8bhws2pq3-git-2.53.0"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "git",
+      "broken": false,
+      "derivation": "/nix/store/h90963gnb2l1qykdzd5fp2r13j8lpv90-git-2.53.0.drv",
+      "description": "Distributed version control system",
+      "install_id": "git",
+      "license": "GPL-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=2fc6539b481e1d2569f25f8799236694180c0993",
+      "name": "git-2.53.0",
+      "pname": "git",
+      "rev": "2fc6539b481e1d2569f25f8799236694180c0993",
+      "rev_count": 953160,
+      "rev_date": "2026-02-23T12:05:20Z",
+      "scrape_date": "2026-02-25T05:24:02.681739Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.53.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "debug": "/nix/store/xr7sgggqixdji66nhax03lwmk25ms7af-git-2.53.0-debug",
+        "doc": "/nix/store/lspm2ph3iad5y9irmh2wms6bm3nhhy76-git-2.53.0-doc",
+        "out": "/nix/store/xz8bzpl5fz92bkhcdmf4g45znvvzcakd-git-2.53.0"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "git",
+      "broken": false,
+      "derivation": "/nix/store/mqsn8x9p6gs996m9l6rfbrm79myyd4s1-git-2.53.0.drv",
+      "description": "Distributed version control system",
+      "install_id": "git",
+      "license": "GPL-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=2fc6539b481e1d2569f25f8799236694180c0993",
+      "name": "git-2.53.0",
+      "pname": "git",
+      "rev": "2fc6539b481e1d2569f25f8799236694180c0993",
+      "rev_count": 953160,
+      "rev_date": "2026-02-23T12:05:20Z",
+      "scrape_date": "2026-02-25T06:09:09.358709Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.53.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "doc": "/nix/store/0wx1wdjy7imyv7cp6p6m2l17ycq7n3q4-git-2.53.0-doc",
+        "out": "/nix/store/bmddbpv896f9rgnm0835434qjiqh1psc-git-2.53.0"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "git",
+      "broken": false,
+      "derivation": "/nix/store/bpgnfd5x1096x8y4lyiz33lad46y9dva-git-2.53.0.drv",
+      "description": "Distributed version control system",
+      "install_id": "git",
+      "license": "GPL-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=2fc6539b481e1d2569f25f8799236694180c0993",
+      "name": "git-2.53.0",
+      "pname": "git",
+      "rev": "2fc6539b481e1d2569f25f8799236694180c0993",
+      "rev_count": 953160,
+      "rev_date": "2026-02-23T12:05:20Z",
+      "scrape_date": "2026-02-25T07:00:11.536796Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.53.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "debug": "/nix/store/i9fi7yqx2z2dryn80w5pr4b1v4nmyida-git-2.53.0-debug",
+        "doc": "/nix/store/frqc9w8q0dxsg7b8w3j0cv1lb9bd6xww-git-2.53.0-doc",
+        "out": "/nix/store/8x49w8i0vafv34rlc6h4a0f7z0z2qpb5-git-2.53.0"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "go",
+      "broken": false,
+      "derivation": "/nix/store/qxp3qchfll281gs2532av4926s6q5q2w-go-1.25.7.drv",
+      "description": "Go Programming language",
+      "install_id": "go",
+      "license": "BSD-3-Clause",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=2fc6539b481e1d2569f25f8799236694180c0993",
+      "name": "go-1.25.7",
+      "pname": "go",
+      "rev": "2fc6539b481e1d2569f25f8799236694180c0993",
+      "rev_count": 953160,
+      "rev_date": "2026-02-23T12:05:20Z",
+      "scrape_date": "2026-02-25T04:46:02.939142Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.25.7",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/hj3rkkp4azj65qvalnbl6ax0sgrfgmgh-go-1.25.7"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "go",
+      "broken": false,
+      "derivation": "/nix/store/rygzd1f3h7cza5p7y0ja3nzcyyx4h7zx-go-1.25.7.drv",
+      "description": "Go Programming language",
+      "install_id": "go",
+      "license": "BSD-3-Clause",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=2fc6539b481e1d2569f25f8799236694180c0993",
+      "name": "go-1.25.7",
+      "pname": "go",
+      "rev": "2fc6539b481e1d2569f25f8799236694180c0993",
+      "rev_count": 953160,
+      "rev_date": "2026-02-23T12:05:20Z",
+      "scrape_date": "2026-02-25T05:24:03.278112Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.25.7",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/2i6kcj0f0xirrblpl43k2yr673bhf2c5-go-1.25.7"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "go",
+      "broken": false,
+      "derivation": "/nix/store/nnbdvaq62kwr6d3n16y1g85ycpcns0zf-go-1.25.7.drv",
+      "description": "Go Programming language",
+      "install_id": "go",
+      "license": "BSD-3-Clause",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=2fc6539b481e1d2569f25f8799236694180c0993",
+      "name": "go-1.25.7",
+      "pname": "go",
+      "rev": "2fc6539b481e1d2569f25f8799236694180c0993",
+      "rev_count": 953160,
+      "rev_date": "2026-02-23T12:05:20Z",
+      "scrape_date": "2026-02-25T06:09:09.512982Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.25.7",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/8yk4r9kmb00ra1r22cxvdwghr8v987nf-go-1.25.7"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "go",
+      "broken": false,
+      "derivation": "/nix/store/fq8965avl2cbgcx0ni9xp7ixh8b8k2ki-go-1.25.7.drv",
+      "description": "Go Programming language",
+      "install_id": "go",
+      "license": "BSD-3-Clause",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=2fc6539b481e1d2569f25f8799236694180c0993",
+      "name": "go-1.25.7",
+      "pname": "go",
+      "rev": "2fc6539b481e1d2569f25f8799236694180c0993",
+      "rev_count": 953160,
+      "rev_date": "2026-02-23T12:05:20Z",
+      "scrape_date": "2026-02-25T07:00:12.218111Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.25.7",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/pz4pxhmlqd3q72crp2sx90k85gf2rqyp-go-1.25.7"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "jq",
+      "broken": false,
+      "derivation": "/nix/store/9qi9isklznqzi3cngpyyvr6gqjp5s97g-jq-1.8.1.drv",
+      "description": "Lightweight and flexible command-line JSON processor",
+      "install_id": "jq",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=2fc6539b481e1d2569f25f8799236694180c0993",
+      "name": "jq-1.8.1",
+      "pname": "jq",
+      "rev": "2fc6539b481e1d2569f25f8799236694180c0993",
+      "rev_count": 953160,
+      "rev_date": "2026-02-23T12:05:20Z",
+      "scrape_date": "2026-02-25T04:46:18.417970Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.8.1",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/qclllhrddhsqs87zrjhb0rikj9vh382g-jq-1.8.1-bin",
+        "dev": "/nix/store/2hj3wiwnf5yjp0n176wgyd9f0ln11zhz-jq-1.8.1-dev",
+        "doc": "/nix/store/im47zqjcdg2bhx97fkwvx7p1yzi098hz-jq-1.8.1-doc",
+        "man": "/nix/store/fw0rb615pja12zpdqdn4w8bxvb310pf9-jq-1.8.1-man",
+        "out": "/nix/store/w513pwkks3lw9ligjigpqniqj3dbipsl-jq-1.8.1"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "jq",
+      "broken": false,
+      "derivation": "/nix/store/vnhc12p5h912mimz152dxmpi81apbhzs-jq-1.8.1.drv",
+      "description": "Lightweight and flexible command-line JSON processor",
+      "install_id": "jq",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=2fc6539b481e1d2569f25f8799236694180c0993",
+      "name": "jq-1.8.1",
+      "pname": "jq",
+      "rev": "2fc6539b481e1d2569f25f8799236694180c0993",
+      "rev_count": 953160,
+      "rev_date": "2026-02-23T12:05:20Z",
+      "scrape_date": "2026-02-25T05:24:21.740524Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.8.1",
+      "outputs_to_install": [
+        "bin",
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/bnsyxn71xzc4nd86k6j25wmzncir628l-jq-1.8.1-bin",
+        "dev": "/nix/store/3iy3f3m2ikjsw8bmx7485flysxj1vgk7-jq-1.8.1-dev",
+        "doc": "/nix/store/rdp9243l8x6pqmcrz99nwa4kf25km9w7-jq-1.8.1-doc",
+        "man": "/nix/store/bl1f8rn2amdw86y6zyxybpz0g9bkd4yw-jq-1.8.1-man",
+        "out": "/nix/store/zglcyjcxpsnqq4ip8w2myqmlv08641b0-jq-1.8.1"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "jq",
+      "broken": false,
+      "derivation": "/nix/store/8c9yfabhfb7401d6djaw9q4cs94mlr3c-jq-1.8.1.drv",
+      "description": "Lightweight and flexible command-line JSON processor",
+      "install_id": "jq",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=2fc6539b481e1d2569f25f8799236694180c0993",
+      "name": "jq-1.8.1",
+      "pname": "jq",
+      "rev": "2fc6539b481e1d2569f25f8799236694180c0993",
+      "rev_count": 953160,
+      "rev_date": "2026-02-23T12:05:20Z",
+      "scrape_date": "2026-02-25T06:09:24.615836Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.8.1",
+      "outputs_to_install": [
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/silqkfms6xjsaq0w3m0g6ygl4zj9992c-jq-1.8.1-bin",
+        "dev": "/nix/store/504ml9mmnn1b1y50i6dd13kbadg4kwj9-jq-1.8.1-dev",
+        "doc": "/nix/store/yqm1xgg9ivm1jlkn2x0bwyc3l499cw4i-jq-1.8.1-doc",
+        "man": "/nix/store/034cqaasry6lv5nc3nkngp2p1ww3rib6-jq-1.8.1-man",
+        "out": "/nix/store/hjc1gxah0mlc523mr4h9mxwzk7nx96hq-jq-1.8.1"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "jq",
+      "broken": false,
+      "derivation": "/nix/store/s6gwsi3f47wxr7a30q668kcfpckznkxn-jq-1.8.1.drv",
+      "description": "Lightweight and flexible command-line JSON processor",
+      "install_id": "jq",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=2fc6539b481e1d2569f25f8799236694180c0993",
+      "name": "jq-1.8.1",
+      "pname": "jq",
+      "rev": "2fc6539b481e1d2569f25f8799236694180c0993",
+      "rev_count": 953160,
+      "rev_date": "2026-02-23T12:05:20Z",
+      "scrape_date": "2026-02-25T07:00:32.948620Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.8.1",
+      "outputs_to_install": [
+        "bin",
+        "bin",
+        "man"
+      ],
+      "outputs": {
+        "bin": "/nix/store/jyi1vkcbaihqbfbra4qd0107sj1jhdk4-jq-1.8.1-bin",
+        "dev": "/nix/store/1m6s8nd3x7s7jddjdgydq10c5wj4dj4h-jq-1.8.1-dev",
+        "doc": "/nix/store/51isxd9mi828n238hj3572vmfx12msp1-jq-1.8.1-doc",
+        "man": "/nix/store/lqxm904bymdhvi8fc2l6gpj0n4wq33a8-jq-1.8.1-man",
+        "out": "/nix/store/70bwclvic12925zck7za5y9g761l9kkh-jq-1.8.1"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    }
+  ]
+}
