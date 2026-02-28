@@ -2,6 +2,8 @@
 
 A pretty terminal git diff viewer with an animated owl that judges your code.
 
+https://github.com/user-attachments/assets/a78988b9-0114-4ad5-ab9a-49db48e03823
+
 ## Why another git diff viewer?
 
 Because why not.
