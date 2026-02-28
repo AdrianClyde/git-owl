@@ -1,8 +1,10 @@
-# Git Owl 🦉
+<img width="100%" alt="git-owl-logo" src="https://github.com/user-attachments/assets/37313e3b-c2fa-4040-b4aa-8357b7062872" />
 
-A pretty terminal git diff viewer with an animated owl that judges your code.
+Git Owl is a pretty terminal git diff viewer with an animated owl that judges your code.
 
-https://github.com/user-attachments/assets/a78988b9-0114-4ad5-ab9a-49db48e03823
+<div align="center">
+  <video src="https://github.com/user-attachments/assets/a78988b9-0114-4ad5-ab9a-49db48e03823" width="100%" />
+</div>
 
 ## Why another git diff viewer?
 
