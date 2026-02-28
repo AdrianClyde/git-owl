@@ -321,7 +321,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.rawContent = msg.content
 		}
 		innerW, _ := m.innerSize()
-		m.viewport.SetContent(applyHScroll(m.rawContent, m.hScroll, innerW))
+		showNums := !m.diffMode && !m.mdPreview
+		m.viewport.SetContent(applyHScroll(m.rawContent, m.hScroll, innerW, showNums))
 		if !wasAutoRefresh {
 			m.viewport.GotoTop()
 		}
@@ -474,16 +475,18 @@ func (m model) updateFileViewer(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.hScroll = 0
 		}
 		innerW, _ := m.innerSize()
+		showNums := !m.diffMode && !m.mdPreview
 		yoff := m.viewport.YOffset
-		m.viewport.SetContent(applyHScroll(m.rawContent, m.hScroll, innerW))
+		m.viewport.SetContent(applyHScroll(m.rawContent, m.hScroll, innerW, showNums))
 		m.viewport.SetYOffset(yoff)
 		return m, nil
 
 	case "l", "right":
 		m.hScroll += 4
 		innerW, _ := m.innerSize()
+		showNums := !m.diffMode && !m.mdPreview
 		yoff := m.viewport.YOffset
-		m.viewport.SetContent(applyHScroll(m.rawContent, m.hScroll, innerW))
+		m.viewport.SetContent(applyHScroll(m.rawContent, m.hScroll, innerW, showNums))
 		m.viewport.SetYOffset(yoff)
 		return m, nil
 	}
@@ -494,15 +497,42 @@ func (m model) updateFileViewer(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // applyHScroll shifts each line of content horizontally using ANSI-aware truncation.
-func applyHScroll(content string, offset, width int) string {
-	if offset == 0 && width == 0 {
-		return content
-	}
+// When lineNums is true, a fixed line-number gutter is prepended to each line.
+func applyHScroll(content string, offset, width int, lineNums bool) string {
+	// Replace tabs with spaces so width counting matches terminal rendering.
+	content = strings.ReplaceAll(content, "\t", "    ")
+
 	lines := strings.Split(content, "\n")
+
+	// Calculate gutter width for line numbers
+	gutterW := 0
+	var numStyle lipgloss.Style
+	if lineNums {
+		digits := len(fmt.Sprintf("%d", len(lines)))
+		if digits < 3 {
+			digits = 3
+		}
+		numStyle = lineNumStyle.Width(digits)
+		gutterW = digits + 1 + 1 // digits + bar + space
+	}
+
+	contentW := width - gutterW
+	if contentW < 10 {
+		contentW = 10
+	}
+
 	for i, line := range lines {
 		if offset > 0 {
 			line = ansi.TruncateLeft(line, offset, "")
 		}
+		if contentW > 0 {
+			line = ansi.Truncate(line, contentW, "")
+		}
+		if lineNums {
+			num := fmt.Sprintf("%d", i+1)
+			line = numStyle.Render(num) + lineBarStyle.Render("│") + " " + line
+		}
+		// Safety: ensure final composed line fits within width
 		if width > 0 {
 			line = ansi.Truncate(line, width, "")
 		}
