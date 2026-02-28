@@ -3,7 +3,9 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -25,6 +27,14 @@ func main() {
 			os.Exit(1)
 		}
 		workDir = wd
+	}
+
+	// Resolve workDir to the git repo root so that paths from git commands
+	// (which are relative to the repo root) join correctly.
+	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	cmd.Dir = workDir
+	if out, err := cmd.Output(); err == nil {
+		workDir = strings.TrimSpace(string(out))
 	}
 
 	p := tea.NewProgram(
