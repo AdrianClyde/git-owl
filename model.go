@@ -29,10 +29,11 @@ type filesLoadedMsg struct {
 }
 
 type fileContentMsg struct {
-	content  string
-	filename string
-	seq      int
-	err      error
+	content      string
+	filename     string
+	seq          int
+	err          error
+	changedLines map[int]bool // new-file line numbers with changes (for gutter indicators)
 }
 
 type tickMsg time.Time
@@ -163,8 +164,9 @@ type model struct {
 	recentFiles  map[string]bool // paths with recent changes (for row ✦ markers)
 
 	// Horizontal scroll
-	hScroll    int    // current horizontal offset in visible columns
-	rawContent string // unshifted file content for re-applying offset
+	hScroll      int          // current horizontal offset in visible columns
+	rawContent   string       // unshifted file content for re-applying offset
+	changedLines map[int]bool // new-file line numbers with changes (gutter indicators)
 
 	// Header pulse
 	headerPulse int // frames remaining (decremented by animTick)
@@ -253,7 +255,16 @@ func loadFileContent(filename string, diffMode, mdPreview bool, status string, s
 		}
 
 		highlighted := highlightContent(content, filename)
-		return fileContentMsg{content: highlighted, filename: filename, seq: seq}
+
+		// When not in diff mode, fetch diff to mark changed lines in gutter
+		var changed map[int]bool
+		if !diffMode && status != "" && status != "??" {
+			if diff, err := getDiff(filename); err == nil && strings.TrimSpace(diff) != "" {
+				changed = parseDiffChangedLines(diff)
+			}
+		}
+
+		return fileContentMsg{content: highlighted, filename: filename, seq: seq, changedLines: changed}
 	}
 }
 
@@ -263,9 +274,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		innerW, innerH := m.innerSize()
-		m.list.SetSize(innerW, innerH)
+		m.list.SetSize(innerW-1, innerH)
 		if m.currentView == fileViewerView {
-			m.viewport.Width = innerW
+			m.viewport.Width = innerW - 1
 			m.viewport.Height = innerH - 2 // breadcrumb + separator
 		}
 		m.ready = true
@@ -315,14 +326,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		wasAutoRefresh := m.autoRefresh
 		m.autoRefresh = false
+		m.changedLines = msg.changedLines
 		if msg.err != nil {
 			m.rawContent = fmt.Sprintf("Error: %v", msg.err)
 		} else {
 			m.rawContent = msg.content
 		}
 		innerW, _ := m.innerSize()
-		showNums := !m.diffMode && !m.mdPreview
-		m.viewport.SetContent(applyHScroll(m.rawContent, m.hScroll, innerW, showNums))
+		m.viewport.SetContent(applyHScroll(m.rawContent, m.hScroll, innerW-1, m.diffMode, m.mdPreview, m.changedLines))
 		if !wasAutoRefresh {
 			m.viewport.GotoTop()
 		}
@@ -402,7 +413,7 @@ func (m model) updateFileList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mdPreview = strings.HasSuffix(strings.ToLower(item.path), ".md")
 		m.loadSeq++
 		innerW, innerH := m.innerSize()
-		m.viewport = viewport.New(innerW, innerH-2)
+		m.viewport = viewport.New(innerW-1, innerH-2)
 		m.viewport.SetContent("Loading...")
 		return m, loadFileContent(item.path, m.diffMode, m.mdPreview, item.status, m.loadSeq)
 
@@ -475,18 +486,16 @@ func (m model) updateFileViewer(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.hScroll = 0
 		}
 		innerW, _ := m.innerSize()
-		showNums := !m.diffMode && !m.mdPreview
 		yoff := m.viewport.YOffset
-		m.viewport.SetContent(applyHScroll(m.rawContent, m.hScroll, innerW, showNums))
+		m.viewport.SetContent(applyHScroll(m.rawContent, m.hScroll, innerW-1, m.diffMode, m.mdPreview, m.changedLines))
 		m.viewport.SetYOffset(yoff)
 		return m, nil
 
 	case "l", "right":
 		m.hScroll += 4
 		innerW, _ := m.innerSize()
-		showNums := !m.diffMode && !m.mdPreview
 		yoff := m.viewport.YOffset
-		m.viewport.SetContent(applyHScroll(m.rawContent, m.hScroll, innerW, showNums))
+		m.viewport.SetContent(applyHScroll(m.rawContent, m.hScroll, innerW-1, m.diffMode, m.mdPreview, m.changedLines))
 		m.viewport.SetYOffset(yoff)
 		return m, nil
 	}
@@ -496,25 +505,124 @@ func (m model) updateFileViewer(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// addScrollbar overlays a scrollbar column on the right edge of content.
+func addScrollbar(content string, contentWidth, height, totalItems, visibleItems, offset int) string {
+	if totalItems <= visibleItems {
+		// No scrollbar needed — pad lines with a space on the right
+		lines := strings.Split(content, "\n")
+		for i := range lines {
+			w := lipgloss.Width(lines[i])
+			if w < contentWidth {
+				lines[i] += strings.Repeat(" ", contentWidth-w)
+			}
+			lines[i] += " "
+		}
+		// Pad to full height
+		for len(lines) < height {
+			lines = append(lines, strings.Repeat(" ", contentWidth+1))
+		}
+		return strings.Join(lines, "\n")
+	}
+
+	lines := strings.Split(content, "\n")
+
+	// Compute thumb position and size
+	thumbSize := max(1, height*visibleItems/totalItems)
+	maxOffset := totalItems - visibleItems
+	if maxOffset < 1 {
+		maxOffset = 1
+	}
+	thumbPos := offset * (height - thumbSize) / maxOffset
+
+	// Pad/truncate to exact height
+	for len(lines) < height {
+		lines = append(lines, "")
+	}
+	if len(lines) > height {
+		lines = lines[:height]
+	}
+
+	for i := 0; i < height; i++ {
+		w := lipgloss.Width(lines[i])
+		if w < contentWidth {
+			lines[i] += strings.Repeat(" ", contentWidth-w)
+		}
+		if i >= thumbPos && i < thumbPos+thumbSize {
+			lines[i] += scrollThumbStyle.Render("┃")
+		} else {
+			lines[i] += scrollTrackStyle.Render("│")
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// renderFileList renders the file list with a scrollbar overlay.
+func (m model) renderFileList() string {
+	listView := m.list.View()
+	innerW, innerH := m.innerSize()
+	total := len(m.list.VisibleItems())
+	visible := innerH // list visible area height
+	if visible > total {
+		visible = total
+	}
+	// Compute scroll offset from current index
+	idx := m.list.Index()
+	offset := 0
+	if total > innerH {
+		// The list keeps the cursor visible, so offset ≈ idx - half visible
+		offset = idx - innerH/2
+		if offset < 0 {
+			offset = 0
+		}
+		if offset > total-innerH {
+			offset = total - innerH
+		}
+	}
+	return addScrollbar(listView, innerW-1, innerH, total, innerH, offset)
+}
+
 // applyHScroll shifts each line of content horizontally using ANSI-aware truncation.
-// When lineNums is true, a fixed line-number gutter is prepended to each line.
-func applyHScroll(content string, offset, width int, lineNums bool) string {
+// Line numbers are always shown. In diff mode, numbers reflect actual file lines
+// (deletions get no number, additions and context lines track the new-file position).
+func applyHScroll(content string, offset, width int, diffMode, hideLineNums bool, changedLines map[int]bool) string {
 	// Replace tabs with spaces so width counting matches terminal rendering.
 	content = strings.ReplaceAll(content, "\t", "    ")
 
 	lines := strings.Split(content, "\n")
 
-	// Calculate gutter width for line numbers
-	gutterW := 0
-	var numStyle lipgloss.Style
-	if lineNums {
-		digits := len(fmt.Sprintf("%d", len(lines)))
-		if digits < 3 {
-			digits = 3
+	if hideLineNums {
+		// No gutter — just apply horizontal scroll and truncation
+		for i, line := range lines {
+			if offset > 0 {
+				line = ansi.TruncateLeft(line, offset, "")
+			}
+			if width > 0 {
+				line = ansi.Truncate(line, width, "")
+			}
+			lines[i] = line
 		}
-		numStyle = lineNumStyle.Width(digits)
-		gutterW = digits + 1 + 1 // digits + bar + space
+		return strings.Join(lines, "\n")
 	}
+
+	// Build line number labels
+	lineLabels := make([]string, len(lines))
+	if diffMode {
+		lineLabels = diffLineNumbers(lines)
+	} else {
+		for i := range lines {
+			lineLabels[i] = fmt.Sprintf("%d", i+1)
+		}
+	}
+
+	// Calculate gutter width from max label
+	maxLabel := 3
+	for _, lbl := range lineLabels {
+		if len(lbl) > maxLabel {
+			maxLabel = len(lbl)
+		}
+	}
+	numStyle := lineNumStyle.Width(maxLabel)
+	gutterW := maxLabel + 1 + 1 // digits + bar + space
 
 	contentW := width - gutterW
 	if contentW < 10 {
@@ -528,10 +636,11 @@ func applyHScroll(content string, offset, width int, lineNums bool) string {
 		if contentW > 0 {
 			line = ansi.Truncate(line, contentW, "")
 		}
-		if lineNums {
-			num := fmt.Sprintf("%d", i+1)
-			line = numStyle.Render(num) + lineBarStyle.Render("│") + " " + line
+		barStyle := lineBarStyle
+		if !diffMode && changedLines[i+1] {
+			barStyle = dirtyIndicatorStyle
 		}
+		line = numStyle.Render(lineLabels[i]) + barStyle.Render("│") + " " + line
 		// Safety: ensure final composed line fits within width
 		if width > 0 {
 			line = ansi.Truncate(line, width, "")
@@ -539,6 +648,104 @@ func applyHScroll(content string, offset, width int, lineNums bool) string {
 		lines[i] = line
 	}
 	return strings.Join(lines, "\n")
+}
+
+// diffLineNumbers parses unified diff lines (which may contain ANSI codes)
+// and returns a label for each line: real file line numbers for context/added
+// lines, blank for deleted lines and diff headers.
+func diffLineNumbers(lines []string) []string {
+	labels := make([]string, len(lines))
+	newLine := 0     // current line number in the new file
+	inHunk := false  // whether we've seen at least one @@ header
+
+	for i, line := range lines {
+		stripped := ansi.Strip(line)
+
+		if strings.HasPrefix(stripped, "@@") {
+			// Parse hunk header: @@ -old,count +new,count @@
+			inHunk = true
+			newLine = parseHunkNewStart(stripped)
+			labels[i] = "~"
+			continue
+		}
+
+		if !inHunk {
+			// File header lines (diff --git, index, ---, +++)
+			labels[i] = ""
+			continue
+		}
+
+		if strings.HasPrefix(stripped, "-") {
+			// Deleted line — no new-file line number
+			labels[i] = ""
+		} else if strings.HasPrefix(stripped, "+") {
+			// Added line
+			labels[i] = fmt.Sprintf("%d", newLine)
+			newLine++
+		} else {
+			// Context line (starts with space or is empty)
+			labels[i] = fmt.Sprintf("%d", newLine)
+			newLine++
+		}
+	}
+	return labels
+}
+
+// parseHunkNewStart extracts the new-file start line from a hunk header.
+// e.g. "@@ -10,5 +20,7 @@" → 20
+func parseHunkNewStart(header string) int {
+	// Find the +N part
+	plusIdx := strings.Index(header, "+")
+	if plusIdx < 0 {
+		return 1
+	}
+	rest := header[plusIdx+1:]
+	// Read digits until comma or space
+	numStr := ""
+	for _, ch := range rest {
+		if ch >= '0' && ch <= '9' {
+			numStr += string(ch)
+		} else {
+			break
+		}
+	}
+	n := 1
+	if numStr != "" {
+		fmt.Sscanf(numStr, "%d", &n)
+	}
+	return n
+}
+
+// parseDiffChangedLines parses a unified diff and returns a set of new-file
+// line numbers that were added or modified (+ lines in the diff).
+func parseDiffChangedLines(diff string) map[int]bool {
+	changed := map[int]bool{}
+	lines := strings.Split(diff, "\n")
+	newLine := 0
+	inHunk := false
+
+	for _, line := range lines {
+		if strings.HasPrefix(line, "@@") {
+			inHunk = true
+			newLine = parseHunkNewStart(line)
+			continue
+		}
+		if !inHunk {
+			continue
+		}
+		if strings.HasPrefix(line, "-") {
+			// Deleted line — doesn't exist in new file
+			continue
+		}
+		if strings.HasPrefix(line, "+") {
+			changed[newLine] = true
+			newLine++
+		} else {
+			// Context line
+			newLine++
+		}
+	}
+	return changed
 }
 
 // innerSize returns the content width and height inside the bordered panel.
@@ -613,8 +820,29 @@ func (m model) renderCmdBar() string {
 	}
 
 	bar := strings.Join(parts, cmdSepStyle.Render("  "))
+
+	// Position counter for file list view
+	var posCounter string
+	if m.currentView == fileListView {
+		total := len(m.list.VisibleItems())
+		if total > 0 {
+			posCounter = cmdDescStyle.Render(fmt.Sprintf("%d/%d", m.list.Index()+1, total))
+		}
+	}
+
+	left := "  " + bar
+	if posCounter != "" {
+		leftW := lipgloss.Width(left)
+		counterW := lipgloss.Width(posCounter)
+		gap := m.width - leftW - counterW - 1
+		if gap < 1 {
+			gap = 1
+		}
+		return cmdBarStyle.Width(m.width).Render(left + strings.Repeat(" ", gap) + posCounter)
+	}
+
 	// Align with panel content: 1 char centering margin + 1 char border = 2
-	return cmdBarStyle.Width(m.width).Render("  " + bar)
+	return cmdBarStyle.Width(m.width).Render(left)
 }
 
 // renderPanel wraps the main content in a rounded border.
@@ -625,7 +853,7 @@ func (m model) renderPanel() string {
 	var content string
 	switch m.currentView {
 	case fileListView:
-		content = m.list.View()
+		content = m.renderFileList()
 	case fileViewerView:
 		content = m.renderFileViewer(innerW)
 	}
@@ -680,5 +908,14 @@ func (m model) renderFileViewer(width int) string {
 	// Separator
 	sep := separatorStyle.Render(strings.Repeat("─", width))
 
-	return header + "\n" + sep + "\n" + m.viewport.View()
+	viewContent := addScrollbar(
+		m.viewport.View(),
+		width-1,
+		m.viewport.Height,
+		m.viewport.TotalLineCount(),
+		m.viewport.VisibleLineCount(),
+		m.viewport.YOffset,
+	)
+
+	return header + "\n" + sep + "\n" + viewContent
 }

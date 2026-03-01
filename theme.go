@@ -158,6 +158,12 @@ var (
 
 	lineBarStyle = lipgloss.NewStyle().
 			Foreground(colorBorderDim)
+
+	scrollThumbStyle = lipgloss.NewStyle().
+				Foreground(colorBlue)
+
+	scrollTrackStyle = lipgloss.NewStyle().
+				Foreground(colorBorderDim)
 )
 
 // ── Animation & header ──────────────────────────────────────
