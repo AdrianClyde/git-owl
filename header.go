@@ -88,30 +88,42 @@ func (m model) renderWithHelpOverlay(header, panel, cmdbar string) string {
 
 // renderHelpContent produces the help text.
 func (m model) renderHelpContent() string {
-	title := headerAccentStyle.Render("Keybindings") + "\n\n"
+	title := headerAccentStyle.Render("Keybindings")
 
 	type binding struct{ key, desc string }
-	bindings := []binding{
-		{"enter", "Open file viewer"},
-		{"esc", "Back to file list"},
-		{"d", "Toggle diff mode"},
-		{"p", "Preview markdown"},
-		{"t", "Toggle all files"},
-		{"r", "Refresh file list"},
-		{"/", "Filter files"},
-		{"?", "Toggle this help"},
-		{"g/G", "Go to top/bottom"},
-		{"j/k", "Scroll up/down"},
-		{"h/l", "Scroll left/right"},
+
+	renderSection := func(label string, bindings []binding) string {
+		header := helpSectionStyle.Render(label)
+		var lines []string
+		for _, b := range bindings {
+			key := cmdKeyStyle.Render(fmt.Sprintf("%5s", b.key))
+			desc := headerDimStyle.Render("  " + b.desc)
+			lines = append(lines, "  "+key+desc)
+		}
+		return header + "\n" + strings.Join(lines, "\n")
+	}
+
+	nav := renderSection("Navigation", []binding{
+		{"enter", "Open file"},
+		{"esc", "Back"},
+		{"j/k", "Move cursor"},
+		{"g/G", "Top / bottom"},
+		{"h/l", "Pan left / right"},
+	})
+
+	views := renderSection("Views", []binding{
+		{"d", "Diff mode"},
+		{"p", "Markdown preview"},
+		{"t", "All files"},
+		{"/", "Filter"},
+		{"r", "Refresh"},
+	})
+
+	actions := renderSection("Actions", []binding{
+		{"e", "Quick fix line"},
+		{"?", "This help"},
 		{"q", "Quit"},
-	}
+	})
 
-	var lines []string
-	for _, b := range bindings {
-		key := cmdKeyStyle.Render(fmt.Sprintf("%8s", b.key))
-		desc := headerDimStyle.Render("  " + b.desc)
-		lines = append(lines, key+desc)
-	}
-
-	return title + strings.Join(lines, "\n")
+	return title + "\n\n" + nav + "\n\n" + views + "\n\n" + actions
 }

@@ -1,6 +1,6 @@
 <img width="100%" alt="git-owl-logo" src="https://github.com/user-attachments/assets/37313e3b-c2fa-4040-b4aa-8357b7062872" />
 
-Git Owl is a pretty terminal git diff viewer with an animated owl that judges your code.
+Git Owl is a watchtower for your repo with an animated owl that judges your code. Not an editor — a watchtower. You watch your changes, and when something's wrong, you fix it without leaving your post.
 
 <div align="center">
   <video src="https://github.com/user-attachments/assets/a78988b9-0114-4ad5-ab9a-49db48e03823" width="100%" />
@@ -12,15 +12,18 @@ Because why not.
 
 ## The real reason
 
-More and more my workflow has simplified to just interacting with Claude and giving it passive aggressive feedback until it implements things correctly. Having a quick file viewer running next to Claude lets me yell at it faster.
+More and more my workflow has simplified to just interacting with Claude and giving it passive aggressive feedback until it implements things correctly. Having a live watchtower running next to Claude lets me yell at it faster.
 
-This is that viewer.
+This is that watchtower.
 
 ## What it does
 
 - Shows your changed files with syntax-highlighted diffs
 - Auto-refreshes every 2 seconds so you can watch Claude butcher your codebase in real time
-- Has an animated owl in the corner that blinks at you
+- Line numbers with gutter change markers so you can see exactly what moved
+- Markdown and mermaid diagram preview because we're not savages
+- Spot a typo? Press `e`, fix the line, move on. It's a red pen, not a blank page
+- Has an animated owl in the corner that blinks at you disapprovingly
 - Tokyo Night theme because we have taste
 
 ## Install
@@ -50,12 +53,17 @@ git-owl /path/to/repo
 
 | Key | Action |
 |-----|--------|
-| `j/k` or `↑/↓` | Navigate files |
+| `j/k` or `↑/↓` | Navigate / move cursor |
 | `Enter` | View file |
+| `Esc` | Back to file list |
 | `d` | Toggle diff view |
+| `e` | Quick fix current line |
 | `p` | Toggle markdown preview |
 | `t` | Toggle all files / changed only |
+| `g/G` | Jump to top / bottom |
+| `h/l` | Scroll left / right |
 | `/` | Filter files |
+| `r` | Refresh file list |
 | `?` | Help |
 | `q` | Quit |
 

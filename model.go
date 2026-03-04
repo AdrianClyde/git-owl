@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -163,6 +164,14 @@ type model struct {
 	events       eventsRing
 	recentFiles  map[string]bool // paths with recent changes (for row ✦ markers)
 
+	// Cursor line (0-based file line index)
+	cursorLine int
+
+	// Quick-fix inline editing
+	quickFix      bool            // in quick-fix mode?
+	quickFixLine  int             // 0-based line being edited
+	quickFixInput textinput.Model // text input widget
+
 	// Horizontal scroll
 	hScroll      int          // current horizontal offset in visible columns
 	rawContent   string       // unshifted file content for re-applying offset
@@ -233,7 +242,7 @@ func loadFileContent(filename string, diffMode, mdPreview bool, status string, s
 				return fileContentMsg{err: err, filename: filename, seq: seq}
 			}
 			if strings.TrimSpace(diff) != "" {
-				highlighted := highlightDiff(diff)
+				highlighted := highlightDiff(diff, filename)
 				return fileContentMsg{content: highlighted, filename: filename, seq: seq}
 			}
 		}
@@ -241,7 +250,7 @@ func loadFileContent(filename string, diffMode, mdPreview bool, status string, s
 		if status == "D" {
 			diff, err := getDiff(filename)
 			if err == nil && strings.TrimSpace(diff) != "" {
-				highlighted := highlightDiff(diff)
+				highlighted := highlightDiff(diff, filename)
 				return fileContentMsg{content: highlighted, filename: filename, seq: seq}
 			}
 			return fileContentMsg{content: "(file deleted)", filename: filename, seq: seq}
@@ -349,7 +358,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.rawContent = msg.content
 		}
 		innerW, _ := m.innerSize()
-		m.viewport.SetContent(applyHScroll(m.rawContent, m.hScroll, innerW-1, m.diffMode, m.mdPreview, m.changedLines))
+		m.viewport.SetContent(applyHScroll(m.rawContent, m.hScroll, innerW-1, m.diffMode, m.mdPreview, m.changedLines, m.cursorLine))
 		if !wasAutoRefresh {
 			m.viewport.GotoTop()
 		}
@@ -359,7 +368,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		cmds := []tea.Cmd{tickCmd()}
 		cmds = append(cmds, loadFiles(m.allFiles))
-		if m.currentView == fileViewerView && m.currentFile != "" {
+		if m.currentView == fileViewerView && m.currentFile != "" && !m.quickFix {
 			m.loadSeq++
 			m.autoRefresh = true
 			item, ok := m.list.SelectedItem().(fileEntry)
@@ -373,6 +382,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case tea.KeyMsg:
+		// Quick-fix mode intercepts all keys
+		if m.quickFix {
+			return m.updateQuickFix(msg)
+		}
+
 		if m.currentView == fileListView && m.list.FilterState() == list.Filtering {
 			var cmd tea.Cmd
 			m.list, cmd = m.list.Update(msg)
@@ -390,6 +404,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case fileViewerView:
 			return m.updateFileViewer(msg)
 		}
+	}
+
+	// Forward non-key messages to textinput during quick-fix (e.g., blink)
+	if m.quickFix {
+		var cmd tea.Cmd
+		m.quickFixInput, cmd = m.quickFixInput.Update(msg)
+		return m, cmd
 	}
 
 	if m.currentView == fileListView {
@@ -427,6 +448,7 @@ func (m model) updateFileList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.currentFile = item.path
 		m.hScroll = 0
+		m.cursorLine = 0
 		m.mdPreview = isPreviewable(item.path)
 		m.loadSeq++
 		innerW, innerH := m.innerSize()
@@ -465,6 +487,9 @@ func (m model) updateFileViewer(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "d":
+		if m.mdPreview {
+			return m, nil
+		}
 		m.diffMode = !m.diffMode
 		m.hScroll = 0
 		m.loadSeq++
@@ -479,6 +504,9 @@ func (m model) updateFileViewer(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "p":
 		if isPreviewable(m.currentFile) {
 			m.mdPreview = !m.mdPreview
+			if m.mdPreview {
+				m.diffMode = false
+			}
 			m.hScroll = 0
 			m.loadSeq++
 			item, ok := m.list.SelectedItem().(fileEntry)
@@ -491,12 +519,90 @@ func (m model) updateFileViewer(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case "e":
+		// Quick-fix: no-op in diff mode or markdown preview
+		if m.diffMode || m.mdPreview {
+			return m, nil
+		}
+		content, err := readFile(m.currentFile)
+		if err != nil {
+			return m, nil
+		}
+		lines := strings.Split(content, "\n")
+		if m.cursorLine >= len(lines) {
+			return m, nil
+		}
+		innerW, _ := m.innerSize()
+		ti := textinput.New()
+		ti.SetValue(lines[m.cursorLine])
+		ti.CharLimit = 0 // unlimited
+		ti.Width = innerW - 8 // leave room for gutter
+		ti.Focus()
+		m.quickFix = true
+		m.quickFixLine = m.cursorLine
+		m.quickFixInput = ti
+		return m, textinput.Blink
+
+	case "j", "down":
+		if m.mdPreview {
+			m.viewport.LineDown(1)
+			return m, nil
+		}
+		totalLines := strings.Count(m.rawContent, "\n") + 1
+		if m.cursorLine < totalLines-1 {
+			m.cursorLine++
+		}
+		// Keep cursor visible in viewport
+		if m.cursorLine >= m.viewport.YOffset+m.viewport.Height {
+			m.viewport.SetYOffset(m.cursorLine - m.viewport.Height + 1)
+		}
+		innerW, _ := m.innerSize()
+		yoff := m.viewport.YOffset
+		m.viewport.SetContent(applyHScroll(m.rawContent, m.hScroll, innerW-1, m.diffMode, m.mdPreview, m.changedLines, m.cursorLine))
+		m.viewport.SetYOffset(yoff)
+		return m, nil
+
+	case "k", "up":
+		if m.mdPreview {
+			m.viewport.LineUp(1)
+			return m, nil
+		}
+		if m.cursorLine > 0 {
+			m.cursorLine--
+		}
+		if m.cursorLine < m.viewport.YOffset {
+			m.viewport.SetYOffset(m.cursorLine)
+		}
+		innerW, _ := m.innerSize()
+		yoff := m.viewport.YOffset
+		m.viewport.SetContent(applyHScroll(m.rawContent, m.hScroll, innerW-1, m.diffMode, m.mdPreview, m.changedLines, m.cursorLine))
+		m.viewport.SetYOffset(yoff)
+		return m, nil
+
 	case "g":
+		if m.mdPreview {
+			m.viewport.GotoTop()
+			return m, nil
+		}
+		m.cursorLine = 0
 		m.viewport.GotoTop()
+		innerW, _ := m.innerSize()
+		m.viewport.SetContent(applyHScroll(m.rawContent, m.hScroll, innerW-1, m.diffMode, m.mdPreview, m.changedLines, m.cursorLine))
+		m.viewport.SetYOffset(0)
 		return m, nil
 
 	case "G":
+		if m.mdPreview {
+			m.viewport.GotoBottom()
+			return m, nil
+		}
+		totalLines := strings.Count(m.rawContent, "\n") + 1
+		m.cursorLine = totalLines - 1
 		m.viewport.GotoBottom()
+		innerW, _ := m.innerSize()
+		yoff := m.viewport.YOffset
+		m.viewport.SetContent(applyHScroll(m.rawContent, m.hScroll, innerW-1, m.diffMode, m.mdPreview, m.changedLines, m.cursorLine))
+		m.viewport.SetYOffset(yoff)
 		return m, nil
 
 	case "h", "left":
@@ -506,7 +612,7 @@ func (m model) updateFileViewer(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		innerW, _ := m.innerSize()
 		yoff := m.viewport.YOffset
-		m.viewport.SetContent(applyHScroll(m.rawContent, m.hScroll, innerW-1, m.diffMode, m.mdPreview, m.changedLines))
+		m.viewport.SetContent(applyHScroll(m.rawContent, m.hScroll, innerW-1, m.diffMode, m.mdPreview, m.changedLines, m.cursorLine))
 		m.viewport.SetYOffset(yoff)
 		return m, nil
 
@@ -514,7 +620,7 @@ func (m model) updateFileViewer(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.hScroll += 4
 		innerW, _ := m.innerSize()
 		yoff := m.viewport.YOffset
-		m.viewport.SetContent(applyHScroll(m.rawContent, m.hScroll, innerW-1, m.diffMode, m.mdPreview, m.changedLines))
+		m.viewport.SetContent(applyHScroll(m.rawContent, m.hScroll, innerW-1, m.diffMode, m.mdPreview, m.changedLines, m.cursorLine))
 		m.viewport.SetYOffset(yoff)
 		return m, nil
 	}
@@ -522,6 +628,47 @@ func (m model) updateFileViewer(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.viewport, cmd = m.viewport.Update(msg)
 	return m, cmd
+}
+
+// updateQuickFix handles keys while in quick-fix inline editing mode.
+func (m model) updateQuickFix(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEnter:
+		// Save the edited line
+		newContent := m.quickFixInput.Value()
+		m.quickFix = false
+		m.loadSeq++
+		item, ok := m.list.SelectedItem().(fileEntry)
+		status := ""
+		if ok {
+			status = item.status
+		}
+		innerW, _ := m.innerSize()
+		return m, tea.Batch(
+			writeFileLineCmd(m.currentFile, m.quickFixLine, newContent),
+			loadFileContent(m.currentFile, m.diffMode, m.mdPreview, status, m.loadSeq, innerW),
+		)
+	case tea.KeyEsc:
+		m.quickFix = false
+		// Re-render to remove text input overlay
+		innerW, _ := m.innerSize()
+		yoff := m.viewport.YOffset
+		m.viewport.SetContent(applyHScroll(m.rawContent, m.hScroll, innerW-1, m.diffMode, m.mdPreview, m.changedLines, m.cursorLine))
+		m.viewport.SetYOffset(yoff)
+		return m, nil
+	default:
+		var cmd tea.Cmd
+		m.quickFixInput, cmd = m.quickFixInput.Update(msg)
+		return m, cmd
+	}
+}
+
+// writeFileLineCmd returns a tea.Cmd that writes a single line to a file.
+func writeFileLineCmd(path string, lineNum int, newContent string) tea.Cmd {
+	return func() tea.Msg {
+		_ = writeFileLine(path, lineNum, newContent)
+		return nil
+	}
 }
 
 // addScrollbar overlays a scrollbar column on the right edge of content.
@@ -603,7 +750,7 @@ func (m model) renderFileList() string {
 // applyHScroll shifts each line of content horizontally using ANSI-aware truncation.
 // Line numbers are always shown. In diff mode, numbers reflect actual file lines
 // (deletions get no number, additions and context lines track the new-file position).
-func applyHScroll(content string, offset, width int, diffMode, hideLineNums bool, changedLines map[int]bool) string {
+func applyHScroll(content string, offset, width int, diffMode, hideLineNums bool, changedLines map[int]bool, cursorLine int) string {
 	// Replace tabs with spaces so width counting matches terminal rendering.
 	content = strings.ReplaceAll(content, "\t", "    ")
 
@@ -648,6 +795,23 @@ func applyHScroll(content string, offset, width int, diffMode, hideLineNums bool
 		contentW = 10
 	}
 
+	// Pre-scan diff line types for background tinting
+	var diffTypes []byte
+	if diffMode {
+		diffTypes = make([]byte, len(lines))
+		for i, line := range lines {
+			stripped := ansi.Strip(line)
+			switch {
+			case strings.HasPrefix(stripped, "+"):
+				diffTypes[i] = '+'
+			case strings.HasPrefix(stripped, "-"):
+				diffTypes[i] = '-'
+			default:
+				diffTypes[i] = ' '
+			}
+		}
+	}
+
 	for i, line := range lines {
 		if offset > 0 {
 			line = ansi.TruncateLeft(line, offset, "")
@@ -656,13 +820,42 @@ func applyHScroll(content string, offset, width int, diffMode, hideLineNums bool
 			line = ansi.Truncate(line, contentW, "")
 		}
 		barStyle := lineBarStyle
-		if !diffMode && changedLines[i+1] {
+		cursorNumStyle := numStyle
+		if i == cursorLine {
+			barStyle = cursorBarStyle
+			cursorNumStyle = cursorNumHighlightStyle.Width(maxLabel)
+		} else if !diffMode && changedLines[i+1] {
 			barStyle = dirtyIndicatorStyle
 		}
-		line = numStyle.Render(lineLabels[i]) + barStyle.Render("│") + " " + line
+		line = cursorNumStyle.Render(lineLabels[i]) + barStyle.Render("│") + " " + line
 		// Safety: ensure final composed line fits within width
 		if width > 0 {
 			line = ansi.Truncate(line, width, "")
+		}
+		// Diff background tint — cover gutter + content, pad to full width
+		if diffMode && i < len(diffTypes) {
+			var bgEsc string
+			switch diffTypes[i] {
+			case '+':
+				bgEsc = diffAddedBgColor
+			case '-':
+				bgEsc = diffDeletedBgColor
+			}
+			if bgEsc != "" {
+				lineW := lipgloss.Width(line)
+				if lineW < width {
+					line += strings.Repeat(" ", width-lineW)
+				}
+				line = injectBg(line, bgEsc)
+			}
+		}
+		// Highlight cursor line
+		if i == cursorLine {
+			lineW := lipgloss.Width(line)
+			if lineW < width {
+				line += strings.Repeat(" ", width-lineW)
+			}
+			line = cursorLineStyle.Width(width).Render(line)
 		}
 		lines[i] = line
 	}
@@ -807,30 +1000,16 @@ func (m model) renderCmdBar() string {
 	type hint struct{ key, desc string }
 
 	var hints []hint
-	if m.currentView == fileListView {
+	if m.quickFix && m.currentView == fileViewerView {
 		hints = []hint{
-			{"enter", "view"},
-			{"d", "iff"},
-			{"t", "oggle all"},
-			{"r", "efresh"},
-			{"/", "filter"},
+			{"enter", "save"},
+			{"esc", "cancel"},
 		}
 	} else {
 		hints = []hint{
-			{"esc", "back"},
-			{"d", "iff"},
-			{"p", "review"},
-			{"g/G", "top/btm"},
-			{"j/k", "scroll"},
-			{"h/l", "pan"},
+			{"?", "help"},
 		}
 	}
-
-	// Global hints
-	hints = append(hints,
-		hint{"?", "help"},
-		hint{"q", "uit"},
-	)
 
 	var parts []string
 	for _, h := range hints {
@@ -912,6 +1091,9 @@ func (m model) renderFileViewer(width int) string {
 	if m.mdPreview {
 		breadcrumb += " " + previewBadgeStyle.Render("PREVIEW")
 	}
+	if m.quickFix {
+		breadcrumb += " " + fixBadgeStyle.Render("FIX")
+	}
 
 	// Scroll percentage right-aligned
 	pct := fmt.Sprintf("%.0f%%", m.viewport.ScrollPercent()*100)
@@ -935,6 +1117,32 @@ func (m model) renderFileViewer(width int) string {
 		m.viewport.VisibleLineCount(),
 		m.viewport.YOffset,
 	)
+
+	// Overlay text input on cursor line during quick-fix
+	if m.quickFix {
+		vcLines := strings.Split(viewContent, "\n")
+		visRow := m.quickFixLine - m.viewport.YOffset
+		if visRow >= 0 && visRow < len(vcLines) {
+			// Build gutter prefix matching the line number width
+			label := fmt.Sprintf("%d", m.quickFixLine+1)
+			maxLabel := 3
+			rawLines := strings.Split(m.rawContent, "\n")
+			for _, l := range rawLines {
+				_ = l
+			}
+			totalL := len(rawLines)
+			labelW := len(fmt.Sprintf("%d", totalL))
+			if labelW < 3 {
+				labelW = 3
+			}
+			if labelW > maxLabel {
+				maxLabel = labelW
+			}
+			gutter := lineNumStyle.Width(maxLabel).Render(label) + dirtyIndicatorStyle.Render("│") + " "
+			vcLines[visRow] = gutter + m.quickFixInput.View()
+		}
+		viewContent = strings.Join(vcLines, "\n")
+	}
 
 	return header + "\n" + sep + "\n" + viewContent
 }

@@ -1,0 +1,14 @@
+graph TD
+    main.go --> model.go
+    model.go --> git.go
+    model.go --> highlight.go
+    model.go --> header.go
+    model.go --> animation.go
+    model.go --> theme.go
+    highlight.go --> Chroma
+    highlight.go --> Glamour
+    highlight.go --> mermaid-ascii
+    git.go --> git CLI
+    model.go --> BubbleTea
+    BubbleTea --> FileListView
+    BubbleTea --> FileViewerView

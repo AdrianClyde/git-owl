@@ -190,9 +190,13 @@ var (
 
 	helpOverlayStyle = lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder()).
-				BorderForeground(colorBlue).
+				BorderForeground(colorBorderFocus).
 				Background(colorSurfaceDim).
 				Padding(1, 2)
+
+	helpSectionStyle = lipgloss.NewStyle().
+				Foreground(colorPurple).
+				Bold(true)
 
 	dirtyIndicatorStyle = lipgloss.NewStyle().
 				Foreground(colorOrange).
@@ -201,6 +205,49 @@ var (
 	cleanIndicatorStyle = lipgloss.NewStyle().
 				Foreground(colorAdded).
 				Bold(true)
+
+	cursorLineStyle = lipgloss.NewStyle().
+			Background(colorHighlight)
+
+	cursorBarStyle = lipgloss.NewStyle().
+			Foreground(colorPurple).
+			Bold(true)
+
+	cursorNumHighlightStyle = lipgloss.NewStyle().
+				Foreground(colorPurple).
+				Bold(true).
+				Align(lipgloss.Right)
+
+	// Diff viewer styles
+	diffAddedPrefixStyle = lipgloss.NewStyle().
+				Foreground(colorAdded).
+				Bold(true)
+
+	diffDeletedPrefixStyle = lipgloss.NewStyle().
+				Foreground(colorDeleted).
+				Bold(true)
+
+	diffAddedBgStyle = lipgloss.NewStyle().
+				Background(lipgloss.Color("#1a2e1a"))
+
+	diffDeletedBgStyle = lipgloss.NewStyle().
+				Background(lipgloss.Color("#2e1a1a"))
+
+	// Raw ANSI 24-bit background escapes for injecting into syntax-highlighted lines
+	diffAddedBgColor   = "\033[48;2;26;46;26m"
+	diffDeletedBgColor = "\033[48;2;46;26;26m"
+
+	diffHunkStyle = lipgloss.NewStyle().
+			Foreground(colorCyan)
+
+	diffHeaderStyle = lipgloss.NewStyle().
+			Foreground(colorFgDim)
+
+	fixBadgeStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#1a1b26")).
+			Background(colorPurple).
+			Padding(0, 1)
 )
 
 // ── Filter prompt ───────────────────────────────────────────

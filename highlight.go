@@ -48,23 +48,71 @@ func highlight(content, filename string) string {
 	return buf.String()
 }
 
-func highlightDiff(diff string) string {
-	lexer := lexers.Get("diff")
-	if lexer == nil {
-		return diff
-	}
-	lexer = chroma.Coalesce(lexer)
+func highlightDiff(diff, filename string) string {
+	lines := strings.Split(diff, "\n")
 
-	iterator, err := lexer.Tokenise(nil, diff)
-	if err != nil {
-		return diff
+	// Extract just the code lines (strip diff prefix) for syntax highlighting
+	var codeLines []string
+	var lineTypes []byte // '+', '-', '@', 'h' (header), ' ' (context)
+	for _, line := range lines {
+		switch {
+		case strings.HasPrefix(line, "+++"), strings.HasPrefix(line, "---"):
+			lineTypes = append(lineTypes, 'h')
+			codeLines = append(codeLines, line)
+		case strings.HasPrefix(line, "@@"):
+			lineTypes = append(lineTypes, '@')
+			codeLines = append(codeLines, line)
+		case strings.HasPrefix(line, "+"):
+			lineTypes = append(lineTypes, '+')
+			codeLines = append(codeLines, line[1:])
+		case strings.HasPrefix(line, "-"):
+			lineTypes = append(lineTypes, '-')
+			codeLines = append(codeLines, line[1:])
+		default:
+			if len(line) > 0 && line[0] == ' ' {
+				lineTypes = append(lineTypes, ' ')
+				codeLines = append(codeLines, line[1:])
+			} else {
+				lineTypes = append(lineTypes, 'h')
+				codeLines = append(codeLines, line)
+			}
+		}
 	}
 
-	var buf bytes.Buffer
-	if err := formatter.Format(&buf, style, iterator); err != nil {
-		return diff
+	// Syntax highlight all code lines as one block
+	codeBlock := strings.Join(codeLines, "\n")
+	highlighted := highlight(codeBlock, filename)
+	hlLines := strings.Split(highlighted, "\n")
+
+	// Pad if needed
+	for len(hlLines) < len(lineTypes) {
+		hlLines = append(hlLines, "")
 	}
-	return buf.String()
+
+	// Reassemble with colored prefixes and background tints
+	for i, lt := range lineTypes {
+		switch lt {
+		case '+':
+			hlLines[i] = diffAddedPrefixStyle.Render("+") + injectBg(hlLines[i], diffAddedBgColor)
+		case '-':
+			hlLines[i] = diffDeletedPrefixStyle.Render("-") + injectBg(hlLines[i], diffDeletedBgColor)
+		case '@':
+			hlLines[i] = diffHunkStyle.Render(lines[i])
+		case 'h':
+			hlLines[i] = diffHeaderStyle.Render(lines[i])
+		default:
+			hlLines[i] = " " + hlLines[i]
+		}
+	}
+
+	return strings.Join(hlLines, "\n")
+}
+
+// injectBg applies a background color that persists through ANSI resets.
+// It prepends the bg escape, re-injects it after every reset, and appends a final reset.
+func injectBg(s, bgEsc string) string {
+	s = strings.ReplaceAll(s, "\033[0m", "\033[0m"+bgEsc)
+	return bgEsc + s + "\033[0m"
 }
 
 func boolPtr(b bool) *bool    { return &b }

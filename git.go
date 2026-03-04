@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -90,6 +91,36 @@ func getDiff(path string) (string, error) {
 		return "", err
 	}
 	return out, nil
+}
+
+// writeFileLine replaces a single line in a file, preserving permissions and line endings.
+func writeFileLine(path string, lineNum int, newContent string) error {
+	full := filepath.Join(workDir, path)
+	info, err := os.Stat(full)
+	if err != nil {
+		return err
+	}
+	data, err := os.ReadFile(full)
+	if err != nil {
+		return err
+	}
+	text := string(data)
+
+	// Detect line ending style
+	eol := "\n"
+	if strings.Contains(text, "\r\n") {
+		eol = "\r\n"
+	}
+
+	// Split, replace, rejoin
+	lines := strings.Split(text, eol)
+	if lineNum < 0 || lineNum >= len(lines) {
+		return fmt.Errorf("line %d out of range (file has %d lines)", lineNum, len(lines))
+	}
+	lines[lineNum] = newContent
+	result := strings.Join(lines, eol)
+
+	return os.WriteFile(full, []byte(result), info.Mode())
 }
 
 func readFile(path string) (string, error) {
