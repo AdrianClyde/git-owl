@@ -218,7 +218,14 @@ func loadFiles(all bool) tea.Cmd {
 	}
 }
 
-func loadFileContent(filename string, diffMode, mdPreview bool, status string, seq int) tea.Cmd {
+func isPreviewable(filename string) bool {
+	lower := strings.ToLower(filename)
+	return strings.HasSuffix(lower, ".md") ||
+		strings.HasSuffix(lower, ".mmd") ||
+		strings.HasSuffix(lower, ".mermaid")
+}
+
+func loadFileContent(filename string, diffMode, mdPreview bool, status string, seq, width int) tea.Cmd {
 	return func() tea.Msg {
 		if diffMode && status != "??" {
 			diff, err := getDiff(filename)
@@ -249,8 +256,17 @@ func loadFileContent(filename string, diffMode, mdPreview bool, status string, s
 			return fileContentMsg{content: "(binary file)", filename: filename, seq: seq}
 		}
 
-		if mdPreview && strings.HasSuffix(strings.ToLower(filename), ".md") {
-			rendered := renderMarkdown(content, 80)
+		lower := strings.ToLower(filename)
+		if mdPreview && (strings.HasSuffix(lower, ".mmd") || strings.HasSuffix(lower, ".mermaid")) {
+			rendered, err := renderMermaid(content)
+			if err != nil {
+				rendered = "Mermaid render error: " + err.Error() + "\n\n" + highlightContent(content, filename)
+			}
+			return fileContentMsg{content: rendered, filename: filename, seq: seq}
+		}
+
+		if mdPreview && strings.HasSuffix(lower, ".md") {
+			rendered := renderMarkdownWithMermaid(content, width)
 			return fileContentMsg{content: rendered, filename: filename, seq: seq}
 		}
 
@@ -351,7 +367,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if ok {
 				status = item.status
 			}
-			cmds = append(cmds, loadFileContent(m.currentFile, m.diffMode, m.mdPreview, status, m.loadSeq))
+			innerW, _ := m.innerSize()
+			cmds = append(cmds, loadFileContent(m.currentFile, m.diffMode, m.mdPreview, status, m.loadSeq, innerW))
 		}
 		return m, tea.Batch(cmds...)
 
@@ -410,12 +427,12 @@ func (m model) updateFileList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.currentFile = item.path
 		m.hScroll = 0
-		m.mdPreview = strings.HasSuffix(strings.ToLower(item.path), ".md")
+		m.mdPreview = isPreviewable(item.path)
 		m.loadSeq++
 		innerW, innerH := m.innerSize()
 		m.viewport = viewport.New(innerW-1, innerH-2)
 		m.viewport.SetContent("Loading...")
-		return m, loadFileContent(item.path, m.diffMode, m.mdPreview, item.status, m.loadSeq)
+		return m, loadFileContent(item.path, m.diffMode, m.mdPreview, item.status, m.loadSeq, innerW)
 
 	case "t":
 		m.allFiles = !m.allFiles
@@ -456,10 +473,11 @@ func (m model) updateFileViewer(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if ok {
 			status = item.status
 		}
-		return m, loadFileContent(m.currentFile, m.diffMode, m.mdPreview, status, m.loadSeq)
+		innerW, _ := m.innerSize()
+		return m, loadFileContent(m.currentFile, m.diffMode, m.mdPreview, status, m.loadSeq, innerW)
 
 	case "p":
-		if strings.HasSuffix(strings.ToLower(m.currentFile), ".md") {
+		if isPreviewable(m.currentFile) {
 			m.mdPreview = !m.mdPreview
 			m.hScroll = 0
 			m.loadSeq++
@@ -468,7 +486,8 @@ func (m model) updateFileViewer(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if ok {
 				status = item.status
 			}
-			return m, loadFileContent(m.currentFile, m.diffMode, m.mdPreview, status, m.loadSeq)
+			innerW, _ := m.innerSize()
+			return m, loadFileContent(m.currentFile, m.diffMode, m.mdPreview, status, m.loadSeq, innerW)
 		}
 		return m, nil
 
