@@ -17,8 +17,8 @@ import (
 type view int
 
 const (
-	fileListView view = iota
-	fileViewerView
+    fileListView view = iota
+    fileViewerView
 )
 
 // Messages
@@ -45,7 +45,7 @@ func tickCmd() tea.Cmd {
 	})
 }
 
-// Custom list delegate for colored badge rows
+// Custom list delegate for colored badge rows.
 type fileDelegate struct {
 	recentFiles map[string]bool
 }
@@ -168,9 +168,12 @@ type model struct {
 	cursorLine int
 
 	// Quick-fix inline editing
-	quickFix      bool            // in quick-fix mode?
-	quickFixLine  int             // 0-based line being edited
-	quickFixInput textinput.Model // text input widget
+    quickFix           bool            // in quick-fix mode?
+	quickFixPending    bool            // true after quick-fix save, cleared on next reload
+	quickFixYOffset    int             // viewport offset to restore after quick-fix
+	quickFixLine       int             // 0-based real file line being edited
+	quickFixCursorLine int             // 0-based viewport content line (for overlay positioning)
+	quickFixInput      textinput.Model // text input widget
 
 	// Horizontal scroll
 	hScroll      int          // current horizontal offset in visible columns
@@ -359,8 +362,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		innerW, _ := m.innerSize()
 		m.viewport.SetContent(applyHScroll(m.rawContent, m.hScroll, innerW-1, m.diffMode, m.mdPreview, m.changedLines, m.cursorLine))
-		if !wasAutoRefresh {
+		if !wasAutoRefresh && !m.quickFixPending {
 			m.viewport.GotoTop()
+		}
+		if m.quickFixPending {
+			m.quickFixPending = false
+			m.viewport.SetYOffset(m.quickFixYOffset)
 		}
 		m.currentView = fileViewerView
 		return m, nil
@@ -520,26 +527,45 @@ func (m model) updateFileViewer(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "e":
-		// Quick-fix: no-op in diff mode or markdown preview
-		if m.diffMode || m.mdPreview {
+		// Quick-fix: no-op in markdown preview
+		if m.mdPreview {
 			return m, nil
+		}
+		// Determine the real file line to edit
+		fileLine := m.cursorLine
+		if m.diffMode {
+			// Map diff cursor line to actual file line number
+			diffLines := strings.Split(m.rawContent, "\n")
+			labels := diffLineNumbers(diffLines)
+			if m.cursorLine >= len(labels) || labels[m.cursorLine] == "" || labels[m.cursorLine] == "~" {
+				return m, nil // header, deleted line, or hunk marker — can't edit
+			}
+			var n int
+			if _, err := fmt.Sscanf(labels[m.cursorLine], "%d", &n); err != nil {
+				return m, nil
+			}
+			fileLine = n - 1 // labels are 1-based
 		}
 		content, err := readFile(m.currentFile)
 		if err != nil {
 			return m, nil
 		}
 		lines := strings.Split(content, "\n")
-		if m.cursorLine >= len(lines) {
+		if fileLine < 0 || fileLine >= len(lines) {
 			return m, nil
 		}
 		innerW, _ := m.innerSize()
 		ti := textinput.New()
-		ti.SetValue(lines[m.cursorLine])
+		// Convert tabs to spaces so the text input displays indentation correctly
+		// (Bubble Tea's textinput renders tabs as single characters, losing width)
+		ti.SetValue(strings.ReplaceAll(lines[fileLine], "\t", "    "))
+		ti.Prompt = "" // no prompt; gutter bar serves as the indicator
 		ti.CharLimit = 0 // unlimited
 		ti.Width = innerW - 8 // leave room for gutter
 		ti.Focus()
 		m.quickFix = true
-		m.quickFixLine = m.cursorLine
+		m.quickFixLine = fileLine
+		m.quickFixCursorLine = m.cursorLine
 		m.quickFixInput = ti
 		return m, textinput.Blink
 
@@ -569,6 +595,45 @@ func (m model) updateFileViewer(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if m.cursorLine > 0 {
 			m.cursorLine--
+		}
+		if m.cursorLine < m.viewport.YOffset {
+			m.viewport.SetYOffset(m.cursorLine)
+		}
+		innerW, _ := m.innerSize()
+		yoff := m.viewport.YOffset
+		m.viewport.SetContent(applyHScroll(m.rawContent, m.hScroll, innerW-1, m.diffMode, m.mdPreview, m.changedLines, m.cursorLine))
+		m.viewport.SetYOffset(yoff)
+		return m, nil
+
+	case "shift+down":
+		if m.mdPreview {
+			m.viewport.HalfViewDown()
+			return m, nil
+		}
+		half := m.viewport.Height / 2
+		totalLines := strings.Count(m.rawContent, "\n") + 1
+		m.cursorLine += half
+		if m.cursorLine >= totalLines {
+			m.cursorLine = totalLines - 1
+		}
+		if m.cursorLine >= m.viewport.YOffset+m.viewport.Height {
+			m.viewport.SetYOffset(m.cursorLine - m.viewport.Height + 1)
+		}
+		innerW, _ := m.innerSize()
+		yoff := m.viewport.YOffset
+		m.viewport.SetContent(applyHScroll(m.rawContent, m.hScroll, innerW-1, m.diffMode, m.mdPreview, m.changedLines, m.cursorLine))
+		m.viewport.SetYOffset(yoff)
+		return m, nil
+
+	case "shift+up":
+		if m.mdPreview {
+			m.viewport.HalfViewUp()
+			return m, nil
+		}
+		half := m.viewport.Height / 2
+		m.cursorLine -= half
+		if m.cursorLine < 0 {
+			m.cursorLine = 0
 		}
 		if m.cursorLine < m.viewport.YOffset {
 			m.viewport.SetYOffset(m.cursorLine)
@@ -637,6 +702,8 @@ func (m model) updateQuickFix(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Save the edited line
 		newContent := m.quickFixInput.Value()
 		m.quickFix = false
+		m.quickFixPending = true
+		m.quickFixYOffset = m.viewport.YOffset
 		m.loadSeq++
 		item, ok := m.list.SelectedItem().(fileEntry)
 		status := ""
@@ -644,10 +711,7 @@ func (m model) updateQuickFix(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			status = item.status
 		}
 		innerW, _ := m.innerSize()
-		return m, tea.Batch(
-			writeFileLineCmd(m.currentFile, m.quickFixLine, newContent),
-			loadFileContent(m.currentFile, m.diffMode, m.mdPreview, status, m.loadSeq, innerW),
-		)
+		return m, writeAndReloadCmd(m.currentFile, m.quickFixLine, newContent, m.diffMode, m.mdPreview, status, m.loadSeq, innerW)
 	case tea.KeyEsc:
 		m.quickFix = false
 		// Re-render to remove text input overlay
@@ -663,11 +727,13 @@ func (m model) updateQuickFix(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 }
 
-// writeFileLineCmd returns a tea.Cmd that writes a single line to a file.
-func writeFileLineCmd(path string, lineNum int, newContent string) tea.Cmd {
+// writeAndReloadCmd writes the edited line then immediately reloads the file content.
+// This avoids a race where loadFileContent reads before the write finishes.
+func writeAndReloadCmd(path string, lineNum int, newContent string, diffMode, mdPreview bool, status string, seq, width int) tea.Cmd {
 	return func() tea.Msg {
 		_ = writeFileLine(path, lineNum, newContent)
-		return nil
+		// Now load inline — reuse the same logic as loadFileContent
+		return loadFileContent(path, diffMode, mdPreview, status, seq, width)()
 	}
 }
 
@@ -1121,7 +1187,7 @@ func (m model) renderFileViewer(width int) string {
 	// Overlay text input on cursor line during quick-fix
 	if m.quickFix {
 		vcLines := strings.Split(viewContent, "\n")
-		visRow := m.quickFixLine - m.viewport.YOffset
+		visRow := m.quickFixCursorLine - m.viewport.YOffset
 		if visRow >= 0 && visRow < len(vcLines) {
 			// Build gutter prefix matching the line number width
 			label := fmt.Sprintf("%d", m.quickFixLine+1)
@@ -1139,7 +1205,18 @@ func (m model) renderFileViewer(width int) string {
 				maxLabel = labelW
 			}
 			gutter := lineNumStyle.Width(maxLabel).Render(label) + dirtyIndicatorStyle.Render("│") + " "
-			vcLines[visRow] = gutter + m.quickFixInput.View()
+			// In diff mode, preserve the +/space prefix so characters don't shift
+			prefix := ""
+			if m.diffMode {
+				rawLines := strings.Split(m.rawContent, "\n")
+				if m.quickFixCursorLine < len(rawLines) {
+					stripped := ansi.Strip(rawLines[m.quickFixCursorLine])
+					if len(stripped) > 0 {
+						prefix = string(stripped[0]) // "+" or " "
+					}
+				}
+			}
+			vcLines[visRow] = gutter + prefix + m.quickFixInput.View()
 		}
 		viewContent = strings.Join(vcLines, "\n")
 	}

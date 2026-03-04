@@ -192,7 +192,8 @@ var (
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(colorBorderFocus).
 				Background(colorSurfaceDim).
-				Padding(1, 2)
+				Padding(1, 3).
+				Width(40)
 
 	helpSectionStyle = lipgloss.NewStyle().
 				Foreground(colorPurple).

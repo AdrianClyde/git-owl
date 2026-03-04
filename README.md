@@ -54,6 +54,7 @@ git-owl /path/to/repo
 | Key | Action |
 |-----|--------|
 | `j/k` or `↑/↓` | Navigate / move cursor |
+| `Shift+↑/↓` | Half-page jump |
 | `Enter` | View file |
 | `Esc` | Back to file list |
 | `d` | Toggle diff view |
@@ -61,7 +62,7 @@ git-owl /path/to/repo
 | `p` | Toggle markdown preview |
 | `t` | Toggle all files / changed only |
 | `g/G` | Jump to top / bottom |
-| `h/l` | Scroll left / right |
+| `h/l` or `←/→` | Scroll left / right |
 | `/` | Filter files |
 | `r` | Refresh file list |
 | `?` | Help |

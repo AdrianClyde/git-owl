@@ -45,7 +45,7 @@ func (m model) renderHeader() string {
 	line1Right := strings.Join(line1RightParts, " ")
 	if line1Right != "" {
 		line1Right += rightPad
-	}
+ }
 
 	gap1 := m.width - lipgloss.Width(line1Left) - lipgloss.Width(line1Right)
 	if gap1 < 1 {
@@ -66,7 +66,7 @@ func (m model) renderHeader() string {
 
 	rendered1 := headerLine2Style.Width(m.width).Render(bar1)
 	rendered2 := headerLine2Style.Width(m.width).Render(bar2)
-	return rendered1 + "\n" + rendered2
+    return rendered1 + "\n" + rendered2
 }
 
 // renderWithHelpOverlay renders the help overlay centered over the panel.
@@ -96,7 +96,7 @@ func (m model) renderHelpContent() string {
 		header := helpSectionStyle.Render(label)
 		var lines []string
 		for _, b := range bindings {
-			key := cmdKeyStyle.Render(fmt.Sprintf("%5s", b.key))
+			key := cmdKeyStyle.Render(fmt.Sprintf("%9s", b.key))
 			desc := headerDimStyle.Render("  " + b.desc)
 			lines = append(lines, "  "+key+desc)
 		}
@@ -106,9 +106,10 @@ func (m model) renderHelpContent() string {
 	nav := renderSection("Navigation", []binding{
 		{"enter", "Open file"},
 		{"esc", "Back"},
-		{"j/k", "Move cursor"},
+		{"j/k/↑/↓", "Move cursor"},
+		{"Shift-↑/↓", "Half-page jump"},
 		{"g/G", "Top / bottom"},
-		{"h/l", "Pan left / right"},
+		{"h/l/←/→", "Pan left / right"},
 	})
 
 	views := renderSection("Views", []binding{
