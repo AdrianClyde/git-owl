@@ -180,6 +180,11 @@ type model struct {
 	rawContent   string       // unshifted file content for re-applying offset
 	changedLines map[int]bool // new-file line numbers with changes (gutter indicators)
 
+	// Tree view
+	treeMode bool
+	treeRoot *treeNode
+	treeCwd  *treeNode // current directory being displayed
+
 	// Header pulse
 	headerPulse int // frames remaining (decremented by animTick)
 
@@ -339,12 +344,28 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.prevSnapshot = newSnapshot(msg.files)
 
 		// Don't update items while user is actively filtering — it resets the filter
-		if m.list.FilterState() != list.Filtering {
-			items := make([]list.Item, len(msg.files))
-			for i, f := range msg.files {
-				items[i] = f
+		if m.list.FilterState() == list.Unfiltered {
+			if m.treeMode {
+				cwdPath := ""
+				if m.treeCwd != nil {
+					cwdPath = m.treeCwd.path
+				}
+				m.treeRoot = buildTree(msg.files)
+				// Restore cwd to same path in new tree
+				if cwdPath != "" {
+					m.treeCwd = findNodeByPath(m.treeRoot, cwdPath)
+				}
+				if m.treeCwd == nil {
+					m.treeCwd = m.treeRoot
+				}
+				m.list.SetItems(childItems(m.treeCwd))
+			} else {
+				items := make([]list.Item, len(msg.files))
+				for i, f := range msg.files {
+					items[i] = f
+				}
+				m.list.SetItems(items)
 			}
-			m.list.SetItems(items)
 		}
 		return m, nil
 
@@ -445,10 +466,73 @@ func (m model) updateFileList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		if m.showHelp {
 			m.showHelp = false
+			return m, nil
+		}
+		// If a filter is applied, esc clears it and restores tree cwd items
+		if m.list.FilterState() == list.FilterApplied {
+			m.list.ResetFilter()
+			if m.treeMode && m.treeCwd != nil {
+				m.list.SetItems(childItems(m.treeCwd))
+			}
+			return m, nil
+		}
+		// In tree mode, esc goes up to parent (same as left/h)
+		if m.treeMode && m.treeCwd != nil && m.treeCwd != m.treeRoot {
+			pp := parentPath(m.treeCwd.path)
+			parent := findNodeByPath(m.treeRoot, pp)
+			if parent == nil {
+				parent = m.treeRoot
+			}
+			prevName := m.treeCwd.name
+			m.treeCwd = parent
+			m.list.SetItems(childItems(m.treeCwd))
+			for i, item := range m.list.Items() {
+				if te, ok := item.(treeEntry); ok && te.node.name == prevName {
+					m.list.Select(i)
+					break
+				}
+			}
+			return m, nil
 		}
 		return m, nil
 
-	case "enter":
+	case "enter", "right", "l":
+		if m.treeMode {
+			if entry, ok := m.list.SelectedItem().(treeEntry); ok {
+				node := entry.node
+				if node.isDir {
+					// Drill into folder
+					m.treeCwd = node
+					m.list.ResetFilter()
+					m.list.SetItems(childItems(node))
+					m.list.Select(0)
+					return m, nil
+				}
+				// File — navigate treeCwd to its parent and open viewer
+				pp := parentPath(node.path)
+				parent := findNodeByPath(m.treeRoot, pp)
+				if parent == nil {
+					parent = m.treeRoot
+				}
+				m.treeCwd = parent
+				m.list.ResetFilter()
+				m.list.SetItems(childItems(m.treeCwd))
+				m.currentFile = node.path
+				m.hScroll = 0
+				m.cursorLine = 0
+				m.mdPreview = isPreviewable(node.path)
+				m.loadSeq++
+				innerW, innerH := m.innerSize()
+				m.viewport = viewport.New(innerW-1, innerH-2)
+				m.viewport.SetContent("Loading...")
+				return m, loadFileContent(node.path, m.diffMode, m.mdPreview, node.status, m.loadSeq, innerW)
+			}
+			return m, nil
+		}
+		// Non-tree: only enter opens files
+		if msg.String() != "enter" {
+			break
+		}
 		item, ok := m.list.SelectedItem().(fileEntry)
 		if !ok {
 			return m, nil
@@ -463,8 +547,40 @@ func (m model) updateFileList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.viewport.SetContent("Loading...")
 		return m, loadFileContent(item.path, m.diffMode, m.mdPreview, item.status, m.loadSeq, innerW)
 
+	case "left", "h":
+		if m.treeMode && m.treeCwd != nil && m.treeCwd != m.treeRoot {
+			// Go up to parent directory
+			pp := parentPath(m.treeCwd.path)
+			parent := findNodeByPath(m.treeRoot, pp)
+			if parent == nil {
+				parent = m.treeRoot
+			}
+			// Select the folder we just came from
+			prevName := m.treeCwd.name
+			m.treeCwd = parent
+			m.list.SetItems(childItems(m.treeCwd))
+			for i, item := range m.list.Items() {
+				if te, ok := item.(treeEntry); ok && te.node.name == prevName {
+					m.list.Select(i)
+					break
+				}
+			}
+			return m, nil
+		}
+
 	case "t":
-		m.allFiles = !m.allFiles
+		if !m.allFiles {
+			// Changed files (flat) → All files (tree)
+			m.allFiles = true
+			m.treeMode = true
+			m.treeCwd = nil
+		} else {
+			// All files (tree) → Changed files (flat)
+			m.allFiles = false
+			m.treeMode = false
+			m.treeRoot = nil
+			m.treeCwd = nil
+		}
 		return m, loadFiles(m.allFiles)
 
 	case "d":
@@ -473,6 +589,31 @@ func (m model) updateFileList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "r":
 		return m, loadFiles(m.allFiles)
+
+	case "shift+down":
+		_, innerH := m.innerSize()
+		half := innerH / 2
+		idx := m.list.Index() + half
+		if max := len(m.list.VisibleItems()) - 1; idx > max {
+			idx = max
+		}
+		m.list.Select(idx)
+		return m, nil
+
+	case "shift+up":
+		_, innerH := m.innerSize()
+		half := innerH / 2
+		idx := m.list.Index() - half
+		if idx < 0 {
+			idx = 0
+		}
+		m.list.Select(idx)
+		return m, nil
+	}
+
+	// In tree mode, populate all files before entering filter so `/` searches everything
+	if m.treeMode && m.treeRoot != nil && msg.String() == "/" {
+		m.list.SetItems(allFileItems(m.treeRoot))
 	}
 
 	var cmd tea.Cmd
@@ -556,9 +697,10 @@ func (m model) updateFileViewer(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		innerW, _ := m.innerSize()
 		ti := textinput.New()
-		// Convert tabs to spaces so the text input displays indentation correctly
-		// (Bubble Tea's textinput renders tabs as single characters, losing width)
-		ti.SetValue(strings.ReplaceAll(lines[fileLine], "\t", "    "))
+		// Strip trailing \r (from CRLF files) and convert tabs to spaces so the
+		// text input displays indentation correctly.
+		line := strings.TrimRight(lines[fileLine], "\r")
+		ti.SetValue(strings.ReplaceAll(line, "\t", "    "))
 		ti.Prompt = "" // no prompt; gutter bar serves as the indicator
 		ti.CharLimit = 0 // unlimited
 		ti.Width = innerW - 8 // leave room for gutter
@@ -1048,7 +1190,11 @@ func (m model) View() string {
 	}
 
 	// Update delegate with recent files before rendering
-	m.list.SetDelegate(fileDelegate{recentFiles: m.recentFiles})
+	if m.treeMode {
+		m.list.SetDelegate(treeDelegate{recentFiles: m.recentFiles})
+	} else {
+		m.list.SetDelegate(fileDelegate{recentFiles: m.recentFiles})
+	}
 
 	header := m.renderHeader()
 	cmdbar := m.renderCmdBar()

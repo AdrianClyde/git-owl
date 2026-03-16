@@ -156,7 +156,7 @@ func listDir(dir string) (string, error) {
 }
 
 func isBinary(data string) bool {
-	// Check first 8KB for null bytes or invalid UTF-8
+	// Check first 8KB for null bytes
 	sample := data
 	if len(sample) > 8192 {
 		sample = sample[:8192]
@@ -164,5 +164,8 @@ func isBinary(data string) bool {
 	if strings.Contains(sample, "\x00") {
 		return true
 	}
-	return !utf8.ValidString(sample)
+	// Check full string for UTF-8 validity — slicing at 8KB can split
+	// multi-byte characters, causing false positives after edits shift
+	// the byte boundary.
+	return !utf8.ValidString(data)
 }
