@@ -38,7 +38,9 @@ func (m model) renderHeader() string {
 	if m.diffMode {
 		line1RightParts = append(line1RightParts, diffBadgeStyle.Render("DIFF"))
 	}
-	if m.allFiles {
+	if m.treeMode {
+		line1RightParts = append(line1RightParts, treeBadgeStyle.Render("TREE"))
+	} else if m.allFiles {
 		line1RightParts = append(line1RightParts, allBadgeStyle.Render("ALL"))
 	}
 	line1RightParts = append(line1RightParts, owlStyle.Render(owlTop()))
@@ -55,6 +57,10 @@ func (m model) renderHeader() string {
 
 	// ── Line 2: spinner + branch + files ... owl bottom ──
 	line2Left := indent + spin + "  " + branch + "  " + dirty + " " + count
+	if m.treeMode && m.treeCwd != nil && m.treeCwd.path != "" {
+		treePath := breadcrumbDirStyle.Render("  " + m.treeCwd.path + "/")
+		line2Left += treePath
+	}
 
 	line2Right := owlStyle.Render(m.owl.owlBottom()) + rightPad
 
@@ -115,7 +121,7 @@ func (m model) renderHelpContent() string {
 	views := renderSection("Views", []binding{
 		{"d", "Diff mode"},
 		{"p", "Markdown preview"},
-		{"t", "All files"},
+		{"t", "Tree view / all files"},
 		{"/", "Filter"},
 		{"r", "Refresh"},
 	})

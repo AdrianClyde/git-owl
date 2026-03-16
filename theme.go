@@ -251,6 +251,26 @@ var (
 			Padding(0, 1)
 )
 
+// ── Tree view ───────────────────────────────────────────────
+
+var (
+	treeFolderCollapsedStyle = lipgloss.NewStyle().
+				Foreground(colorCyan)
+
+	treeFolderExpandedStyle = lipgloss.NewStyle().
+				Foreground(colorCyan)
+
+	treeFolderNameStyle = lipgloss.NewStyle().
+				Foreground(colorBlue).
+				Bold(true)
+
+	treeBadgeStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#1a1b26")).
+			Background(colorPurple).
+			Padding(0, 1)
+)
+
 // ── Filter prompt ───────────────────────────────────────────
 
 var filterPromptStyle = lipgloss.NewStyle().
